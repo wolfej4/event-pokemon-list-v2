@@ -26,10 +26,29 @@
   const quoteModal = document.getElementById("quote-modal");
   const offlineBanner = document.getElementById("offline-banner");
   const kioskToast = document.getElementById("kiosk-toast");
+  const tileSizeRow = document.getElementById("tile-size-row");
 
   const DESIGNS_CACHE_KEY = "catalogDesignsCache";
   const SETTINGS_CACHE_KEY = "catalogSettingsCache";
   const PENDING_QUOTES_KEY = "pendingQuoteRequests";
+  const TILE_SIZE_KEY = "catalogTileSize";
+
+  // ---- tile size (large/medium/small tiles on phone widths) ----
+  function applyTileSize(size){
+    document.body.dataset.tileSize = size;
+    tileSizeRow.querySelectorAll(".tile-size-btn").forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.size === size);
+    });
+    try{ localStorage.setItem(TILE_SIZE_KEY, size); }catch(e){}
+  }
+  tileSizeRow.addEventListener("click", (e) => {
+    const btn = e.target.closest(".tile-size-btn");
+    if(!btn) return;
+    applyTileSize(btn.dataset.size);
+  });
+  let savedTileSize = "small";
+  try{ savedTileSize = localStorage.getItem(TILE_SIZE_KEY) || "small"; }catch(e){}
+  applyTileSize(savedTileSize);
 
   // ---- quote cart (slugs the customer wants a quote for) ----
   let cart = [];

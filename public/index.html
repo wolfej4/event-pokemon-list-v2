@@ -38,7 +38,14 @@
 </div>
 
 <main>
-  <div id="result-count"></div>
+  <div id="result-bar">
+    <div id="result-count"></div>
+    <div id="tile-size-row" role="group" aria-label="Tile size">
+      <button class="tile-size-btn" data-size="large" title="Large tiles — 1 across" aria-label="Large tiles">L</button>
+      <button class="tile-size-btn" data-size="medium" title="Medium tiles — 2 across" aria-label="Medium tiles">M</button>
+      <button class="tile-size-btn active" data-size="small" title="Small tiles — 3 across" aria-label="Small tiles">S</button>
+    </div>
+  </div>
   <div id="featured-section" style="display:none;">
     <div class="section-heading">Featured</div>
     <div id="featured-grid" class="grid"></div>
