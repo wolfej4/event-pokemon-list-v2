@@ -98,7 +98,13 @@
         method: "POST", headers: {"Content-Type":"application/json"},
         body: JSON.stringify({ password: pwInput.value })
       });
-      if(!res.ok){ loginError.textContent = "Wrong password."; loginBtn.disabled = false; return; }
+      if(!res.ok){
+        loginError.textContent = res.status === 429
+          ? "Too many attempts — please wait a bit and try again."
+          : "Wrong password.";
+        loginBtn.disabled = false;
+        return;
+      }
       pwInput.value = "";
       await showDashboard();
     }catch(err){

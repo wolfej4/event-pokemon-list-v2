@@ -6,11 +6,14 @@ const n3d = require("../n3dClient");
 const square = require("../squareClient");
 const mailer = require("../mailer");
 const { checkPassword, requireAdmin } = require("../auth");
+const { rateLimit } = require("../rateLimit");
 
 const router = express.Router();
 
 // ---- auth ----
-router.post("/login", (req, res) => {
+const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10 }); // 10 attempts / 15 min / IP
+
+router.post("/login", loginLimiter, (req, res) => {
   const { password } = req.body || {};
   if (!checkPassword(password)) {
     return res.status(401).json({ error: "wrong_password" });
