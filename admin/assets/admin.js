@@ -530,7 +530,8 @@
       });
       const j = await res.json();
       if(!res.ok) throw new Error(j.error || "sync failed");
-      syncStatus.textContent = "Done — " + j.added + " new, " + j.updated + " updated.";
+      syncStatus.textContent = "Done — " + j.added + " new, " + j.updated + " updated" +
+        (j.spritesFilled ? ", " + j.spritesFilled + " sprite" + (j.spritesFilled === 1 ? "" : "s") + " filled in" : "") + ".";
       await loadDesigns();
     }catch(err){
       syncStatus.textContent = "Sync failed: " + err.message;

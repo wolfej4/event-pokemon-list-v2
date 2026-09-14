@@ -183,7 +183,37 @@ router.post("/sync", async (req, res) => {
     });
 
     db.updateSettings({ lastCursor: result.cursor });
-    res.json({ ok: true, added, updated, totalSeen: result.totalSeen });
+
+    // Incremental syncs only see designs N3D reports as "changed" — but a
+    // sprite can show up for an existing character design without its
+    // updated_at moving (N3D generates them shortly after a design goes
+    // live), so that design could stay spriteless forever if we only ever
+    // look at what changed. Run one supplementary full-catalog pass to
+    // backfill sprite_url, but only when something is actually missing —
+    // keeps a normal incremental sync cheap in the (eventual) common case
+    // where every character design already has its sprite.
+    let spritesFilled = 0;
+    const pendingSprites = !full && db.allDesigns().some(d => d.category === "character" && !d.sprite_url);
+    if (pendingSprites) {
+      try {
+        await n3d.syncCatalog({
+          since: null,
+          onPage: async (designs) => {
+            for (const d of designs) {
+              const existing = db.getDesign(d.slug);
+              if (existing && !existing.sprite_url && d.sprite_url) {
+                db.upsertDesign(d.slug, { sprite_url: d.sprite_url });
+                spritesFilled++;
+              }
+            }
+          }
+        });
+      } catch (err) {
+        console.error("[sync] sprite backfill pass failed:", err.message);
+      }
+    }
+
+    res.json({ ok: true, added, updated, totalSeen: result.totalSeen, spritesFilled });
   } catch (err) {
     const status = err.isAuth ? 502 : 500;
     res.status(status).json({ error: err.message || "sync_failed" });

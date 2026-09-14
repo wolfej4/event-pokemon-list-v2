@@ -189,7 +189,13 @@ stack's environment variables so the admin session cookie requires HTTPS.
   generates one — no admin action needed, it just shows up after a sync.
   Poke Balls, stands, and Extras don't have sprites (they aren't Pokémon),
   and a brand-new character design may take a sync or two before its sprite
-  appears.
+  appears. A regular (incremental) sync only asks N3D for what's changed,
+  which can miss a sprite that appeared on a design that's otherwise
+  unchanged — so a normal "Sync from N3D" click automatically does one
+  extra full-catalog pass to backfill any still-missing sprites, but only
+  when at least one character design doesn't have one yet. Once every
+  character design has its sprite, that extra pass stops happening and
+  syncing goes back to just the incremental request.
 
 ## Pushing designs to Square
 
