@@ -1,74 +1,71 @@
 "use strict";
 const nodemailer = require("nodemailer");
+const { fmt } = require("./pricing");
 
 let transporter = null;
-let configWarningShown = false;
-
-function isConfigured() {
-  return !!(process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS);
-}
-
-function getTransporter() {
-  if (!isConfigured()) return null;
-  if (transporter) return transporter;
-  transporter = nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: Number(process.env.SMTP_PORT || 587),
-    secure: process.env.SMTP_SECURE === "true", // true for port 465, false for 587/STARTTLS
-    auth: {
-      user: process.env.SMTP_USER,
-      pass: process.env.SMTP_PASS
-    }
-  });
+function configured() { return !!(process.env.SMTP_HOST && process.env.SMTP_FROM); }
+function getTransport() {
+  if (!configured()) return null;
+  if (!transporter) {
+    const port = Number(process.env.SMTP_PORT || 587);
+    transporter = nodemailer.createTransport({
+      host: process.env.SMTP_HOST,
+      port,
+      secure: process.env.SMTP_SECURE ? process.env.SMTP_SECURE === "true" : port === 465,
+      auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined
+    });
+  }
   return transporter;
 }
 
-/**
- * Send the quote PDF to the customer, cc'ing the business if configured.
- * Throws if SMTP isn't configured or the send fails — callers should catch
- * and turn that into a friendly API response.
- */
-async function sendQuoteEmail({ to, cc, businessName, customerName, pdfBuffer }) {
-  const t = getTransporter();
-  if (!t) {
-    const err = new Error("SMTP is not configured on this server");
-    err.isNotConfigured = true;
-    throw err;
-  }
-
-  const fromName = process.env.SMTP_FROM_NAME || businessName || "Design Catalog";
-  const fromEmail = process.env.SMTP_FROM_EMAIL || process.env.SMTP_USER;
-
-  const greetingName = customerName ? customerName.split(" ")[0] : "there";
-  const bizLabel = businessName || "us";
-
-  await t.sendMail({
-    from: `"${fromName}" <${fromEmail}>`,
-    to,
-    cc: cc || undefined,
-    replyTo: cc || undefined,
-    subject: `Your quote from ${bizLabel}`,
-    text:
-      `Hi ${greetingName},\n\n` +
-      `Attached is your quote from ${bizLabel}, including estimated lead time and cost ` +
-      `for the design(s) you selected.\n\n` +
-      `This is an automated estimate — reply to this email if you have questions or ` +
-      `want to confirm the order.\n\n` +
-      `Thanks,\n${bizLabel}`,
-    attachments: [
-      { filename: "quote.pdf", content: pdfBuffer, contentType: "application/pdf" }
-    ]
-  });
+function itemLines(q, cur) {
+  return q.items.map(i => `  ${i.qty} × ${i.title} — ${fmt(i.unit_cents * i.qty, cur)}`).join("\n");
 }
 
-async function verifyConnection() {
-  const t = getTransporter();
-  if (!t) {
-    const err = new Error("SMTP is not configured");
-    err.isNotConfigured = true;
-    throw err;
+// Sends the customer copy and the business copy. Returns {customer, business} status strings.
+async function sendQuoteEmails(q, pdf, settings) {
+  const t = getTransport();
+  if (!t) return { customer: "skipped: SMTP not configured", business: "skipped: SMTP not configured" };
+  const cur = settings.currency || "USD";
+  const shop = settings.businessName || "Our shop";
+  const attachment = { filename: `estimate-${q.id}.pdf`, content: pdf, contentType: "application/pdf" };
+  const result = {};
+
+  try {
+    await t.sendMail({
+      from: process.env.SMTP_FROM,
+      to: q.customer.email,
+      replyTo: settings.businessEmail || undefined,
+      subject: `Your print estimate ${q.id} from ${shop}`,
+      text: `Hi ${q.customer.name},\n\nThanks for your request. Your estimate is attached.\n\n${itemLines(q, cur)}\n\nEstimated total: ${fmt(q.total_cents, cur)}\n\nReply to this email with any questions or to confirm your order.\n\n${shop}`,
+      attachments: [attachment]
+    });
+    result.customer = "sent";
+  } catch (e) { result.customer = "failed: " + e.message; }
+
+  if (settings.businessEmail) {
+    try {
+      await t.sendMail({
+        from: process.env.SMTP_FROM,
+        to: settings.businessEmail,
+        replyTo: q.customer.email,
+        subject: `New quote request ${q.id} — ${q.customer.name} (${fmt(q.total_cents, cur)})`,
+        text: `New quote request.\n\nName: ${q.customer.name}\nEmail: ${q.customer.email}\nPhone: ${q.customer.phone || "—"}\nSource: ${q.source}\n\n${itemLines(q, cur)}\n\nEstimated total: ${fmt(q.total_cents, cur)}\n\nNotes:\n${q.customer.notes || "—"}`,
+        attachments: [attachment]
+      });
+      result.business = "sent";
+    } catch (e) { result.business = "failed: " + e.message; }
+  } else {
+    result.business = "skipped: no business email set in admin";
   }
-  return t.verify();
+  return result;
 }
 
-module.exports = { isConfigured, sendQuoteEmail, verifyConnection };
+async function verify() {
+  const t = getTransport();
+  if (!t) throw new Error("SMTP_HOST and SMTP_FROM are not set");
+  await t.verify();
+  return true;
+}
+
+module.exports = { sendQuoteEmails, verify, configured };

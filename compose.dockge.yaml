@@ -1,0 +1,15 @@
+# For Dockge (or any host without the source code): pulls the image that
+# .github/workflows/docker.yml builds on every push to main.
+services:
+  n3d-catalog:
+    image: ghcr.io/wolfej4/n3d-catalog:latest
+    container_name: n3d-catalog
+    restart: unless-stopped
+    ports:
+      - "8090:3000"
+    env_file: .env
+    volumes:
+      - n3d_catalog_data:/app/data
+
+volumes:
+  n3d_catalog_data:

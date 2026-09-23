@@ -1,296 +1,77 @@
 # N3D Catalog
 
-A customer-facing storefront for your N3D design catalog, plus an admin
-panel where you set a price and a shop/order link (or leave it blank for
-"request a quote") on each design.
+Customer-facing catalog of your N3D designs with a quote builder, plus an admin
+panel for pricing, N3D sync, and pushing to Square. Light and dark mode on both.
 
-Your N3D API key now lives only on the server — the browser never sees it.
-That also sidesteps the CORS problem the pure client-side version might have
-hit, since the key-holding request happens server-to-server.
+## What it does
 
-## What's inside
+**Storefront (`/`)**
+- Browse, search (name, type, Pokédex #), and filter designs. Each card shows a
+  strip of the design's actual filament colors.
+- Add designs to a quote, change quantities, and submit name/email/phone/notes.
+- The server prices every line itself, builds a PDF estimate, and emails it to
+  the customer and to you. The customer can also open the PDF right away.
+- Light/dark toggle in the header. Follows the device setting until someone
+  picks one, then remembers it.
 
-- `server.js` / `src/` — Express backend. Holds the N3D key, syncs the
-  catalog into a local JSON file (`data/db.json`), and serves two APIs:
-  `/api/public/*` (no auth, powers the storefront) and `/api/admin/*`
-  (password-protected, powers the admin panel).
-- `public/` — the customer-facing storefront (`/`).
-- `admin/` — the admin panel (`/admin`), gated by `ADMIN_PASSWORD`.
-- `Dockerfile` / `docker-compose.yml` — container build + stack definition.
-- `src/mailer.js` / `src/pdf.js` — SMTP sending and PDF quote generation.
-- `public/sw.js` / `public/manifest.json` — offline caching and "Add to Home Screen" support for the storefront.
+**Admin (`/admin`)**
+- **Designs:** sync from N3D (incremental or full), set a custom price per
+  design, add a "Buy online" link, hide/show designs, push single designs to Square.
+- **Pricing:** formula for any design without a custom price:
+  `(base fee + grams × per-gram + hours × per-hour) × (1 + markup%)`, with a
+  minimum and optional round-up. Live preview as you type.
+- **Quotes:** every request with status (new/contacted/won/lost), PDF, resend
+  email, CSV export.
+- **Square:** test connection, push everything (runs in the background with a
+  progress bar). Items get name, description, photo, and price. Designs priced
+  at $0 go up as variable-price items. Re-pushing updates the existing item
+  instead of duplicating it and only re-uploads the photo if N3D changed it.
+  Turn off "Update prices in Square when re-pushing" if you'd rather manage
+  prices in Square after the first push.
+- **Settings:** business name, tagline, your quote email, phone, PDF fine print,
+  kiosk timeout, and connection tests.
+- **Logo:** upload under Settings. Optional second version for dark mode. Shown in
+  the store header, admin bar, browser tab, and on quote PDFs (PNG/JPG only for
+  the PDF). Stored on the data volume, so no rebuild is needed to change it.
 
-## Quotes: how it works
+**Kiosk mode** for a booth tablet: open `/?kiosk=1` once on that device. Hides
+outside shop links, uses bigger buttons, and clears everything after the idle
+timeout. `/?kiosk=0` turns it off.
 
-Customers tap **+** on any design (grid or detail view) to add it to a quote
-request, then use the floating "Request quote" button to enter their name,
-email, and optional notes. On submit, the server:
+## Deploy in Portainer
 
-1. Looks up each requested design's price and `print_time_seconds`
-2. Sums print time and converts it to an estimated lead time using
-   **Printer hours available per day** and **Lead-time buffer (days)**
-   (both set in `/admin` → Storefront settings)
-3. Sums price for any priced items (unpriced ones are flagged "priced on
-   request" rather than guessed at)
-4. Renders a PDF with the design list, print time, estimated lead time, and
-   estimated cost
-5. Emails it to the customer via SMTP, cc'ing your notification email so you
-   see every request too
+1. Push this folder to a Git repo (recommended) or upload it to the Docker host.
+2. Portainer → Stacks → Add stack → Repository (or Upload) with `docker-compose.yml`.
+3. Add the environment variables from `.env.example`. At minimum:
+   `N3D_API_KEY`, `ADMIN_PASSWORD`, `SESSION_SECRET`, and the `SMTP_*` values.
+   Add `SQUARE_ACCESS_TOKEN` for Square (try `SQUARE_ENV=sandbox` with a sandbox
+   token first).
+4. Deploy, open `http://<host>:8090/admin`, log in, and click **Sync from N3D**.
+5. Set your business email in Settings so you get a copy of each quote.
 
-If SMTP isn't configured, the storefront automatically falls back to a
-plain `mailto:` link listing the requested designs — nothing breaks, it's
-just less automated.
+Behind HTTPS (Nginx Proxy Manager, Traefik, Cloudflare Tunnel), set
+`COOKIE_SECURE=true`.
 
-## Event / kiosk mode (for tables without full inventory on hand)
+## Deploy in Dockge (compose file only)
 
-Two independent toggles in `/admin` → Event & kiosk mode:
+1. Push this folder to GitHub. The included workflow builds
+   `ghcr.io/wolfej4/n3d-catalog:latest` on every push to `main` (check the Actions tab).
+2. In Dockge, create a stack with the contents of `compose.dockge.yaml` and paste
+   your values from `.env.example` into the `.env` box.
+3. If the package is private, run `docker login ghcr.io -u wolfej4` on the host once
+   (a personal access token with `read:packages` as the password), or make the
+   package public under GitHub → Packages → Package settings.
+4. To update later: push to GitHub, wait for the build, then click Update in Dockge.
 
-- **Event mode** — the public storefront only shows designs you've marked
-  **Featured** in the Designs table. Flip this on before a show and the
-  catalog opens straight to what you actually brought, instead of your
-  full library. Flip it off afterward to go back to showing everything.
-  (Outside event mode, any Featured designs still surface in a "Featured"
-  section above the full catalog — event mode just narrows it further.)
-- **Kiosk mode** — after a stretch of inactivity (configurable, default 2
-  minutes), the storefront auto-resets: closes any open modal, clears the
-  current quote cart and search/filter, and scrolls back to top. This
-  keeps one visitor's browsing/quote cart from leaking into the next
-  person's session on a shared tablet. It doesn't lock the device itself —
-  see "Running this as an actual kiosk" below for that.
+## Notes
 
-## Installing on an iPad (or any phone/tablet)
-
-Both the storefront and the admin panel are installable PWAs — from Safari,
-tap **Share → Add to Home Screen** on `/` (storefront) and/or `/admin`
-(admin panel). Each gets its own home screen icon and opens full-screen
-without Safari's address bar, like a native app. They're separate installs
-with separate icons, so you can add one or both depending on whether you
-need the customer-facing catalog, your own admin tools, or both on the
-device.
-
-## Getting customers to the storefront: QR code
-
-`/admin` → **Storefront QR code** shows a QR code customers can scan with
-their phone to pull up the storefront directly — handy for a table sign at
-an event. It's generated from whatever host/URL you're currently viewing
-the admin panel from, so it always points at the right place (custom
-domain, tunnel, raw IP:port, whatever) without needing that URL configured
-anywhere. Use **Print** for a paper sign, or **Copy link** to share it
-another way.
-
-## Offline resilience
-
-The storefront registers a service worker that caches the app shell and the
-last-fetched catalog, so it keeps working if the connection drops mid-event:
-
-- The page still loads and shows the last synced catalog, with a banner
-  noting it's offline and when it was last synced.
-- Adding to a quote and submitting still works — if the quote-request
-  fails purely due to no connectivity, it's queued in the browser and
-  sent automatically the next time the device is back online (checked
-  immediately on reconnect, and once on page load).
-
-This depends on the device having loaded the app at least once while
-online. Do a sync + load the storefront on the device before you leave for
-an event with uncertain wifi.
-
-The admin panel also registers a service worker (so it's installable and
-launches instantly), but it deliberately only caches its own HTML/CSS/JS —
-never `/api/admin/*`. Admin data (pricing, quotes, sync/Square status) is
-sensitive and needs to stay current, so it always hits the network; the
-admin panel simply won't load new data while offline instead of showing you
-something stale.
-
-## Running this as an actual kiosk
-
-Kiosk mode (above) resets the *app's* state between visitors, but nothing
-in a web page can stop someone from swiping away to the home screen or
-opening another app — that needs OS-level lockdown:
-
-1. Add the storefront to the iPad's home screen (Safari → Share → Add to
-   Home Screen) — it opens full-screen without Safari's address bar.
-2. Turn on **Guided Access** (Settings → Accessibility → Guided Access),
-   then triple-click the side/home button while the app is open to pin the
-   device to just that app.
-
-## Quote request log
-
-Every quote attempt — sent or failed — is recorded in `/admin` under
-"Quote requests": customer, items, estimated cost/lead time, and status.
-Useful for following up after an event even if nobody converts on the
-spot. Export the whole log as CSV from the same panel.
-
-## Running it
-
-### 1. Set your environment variables
-
-Copy `.env.example` to `.env` and fill in:
-
-- `N3D_API_KEY` — from N3D Dashboard → Tools → Design API
-- `ADMIN_PASSWORD` — whatever you'll type to log into `/admin`
-- `SESSION_SECRET` — a random string (`openssl rand -hex 32`)
-- `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` / `SMTP_USER` / `SMTP_PASS` —
-  your outgoing mail provider (see note below). Leave these blank to skip
-  email quotes for now — you can add them later without losing any data.
-
-### A note on SMTP providers
-
-Gmail/Workspace and most consumer inboxes block plain password SMTP login
-by default — you'd need an **app password**, not your normal login. For a
-business sending quote emails, a transactional provider (Postmark, SES,
-Mailgun, SendGrid, Resend, etc. — or your domain host's SMTP if it offers
-one) tends to be more reliable and less likely to land in spam than a
-personal Gmail account. Any of them will give you an SMTP host/port/user/
-pass to drop into the env vars above — the app doesn't care which you use.
-
-### 2a. Run locally with Docker Compose
-
-```
-docker compose up --build
-```
-
-Storefront: http://localhost:8090
-Admin: http://localhost:8090/admin
-
-### 2b. Deploy via Portainer
-
-1. In Portainer, go to **Stacks → Add stack**.
-2. Either point it at this project's Git repo (if you push it to one), or
-   choose **Upload** / **Web editor** and paste the contents of
-   `docker-compose.yml`.
-3. Under **Environment variables**, add `N3D_API_KEY`, `ADMIN_PASSWORD`, and
-   `SESSION_SECRET` (don't bake these into the compose file itself).
-4. Deploy the stack. Portainer will build the image from the `Dockerfile` in
-   this folder.
-5. Once it's up, visit `http://<your-host>:8090/admin`, log in, and click
-   **Sync from N3D** to pull the catalog for the first time.
-
-If you're putting this behind a reverse proxy with HTTPS (recommended once
-it's customer-facing — Traefik, Nginx Proxy Manager, Cloudflare Tunnel,
-whatever you're already running on Wolfden), set `COOKIE_SECURE=true` in the
-stack's environment variables so the admin session cookie requires HTTPS.
-
-**Important:** only set `COOKIE_SECURE=true` if `/admin` is *exclusively*
-reached over HTTPS. With it set, logging in over plain HTTP (a raw
-`ip:port`, no TLS — e.g. testing locally, or on the same LAN as an event)
-will look like it succeeds, but the browser silently won't store the
-session cookie, so every request right after 401s with `not_authenticated`
-— in every browser, including a fresh private window, since no session was
-ever actually established. If you hit that, either turn `COOKIE_SECURE`
-off or switch to accessing it over HTTPS. The server logs a warning on
-startup when this is set, and the admin panel's Error log will call out
-this exact cause if it happens.
-
-### 2c. Deploy on Unraid
-
-Uses `docker-compose.unraid.yml`, which **pulls a ready-built image from
-GitHub Container Registry** (`ghcr.io/wolfej4/event-pokemon-list:latest`)
-instead of building on the NAS — no repo/source tree needs to exist on
-Unraid at all, so there's no build-context path to get wrong. GitHub
-Actions (`.github/workflows/docker-publish.yml`) rebuilds and pushes that
-image automatically on every push to `main`. It also uses a bind mount into
-`/mnt/user/appdata` (instead of a named volume) so the data file shows up
-in Unraid's file manager and gets picked up by the CA Backup/Restore plugin
-automatically, plus WebUI/icon labels so it gets a proper entry on the
-Docker tab.
-
-1. Install the **Compose Manager** (or **Docker Compose Manager**) plugin
-   from Community Applications if you don't already have it.
-2. If `ghcr.io/wolfej4/event-pokemon-list` is a private package (GHCR
-   packages default to private), either:
-   - make it public — on GitHub, go to the package's page (linked from the
-     repo's sidebar under "Packages") → **Package settings** → **Change
-     visibility** → Public, or
-   - run `docker login ghcr.io` once on the Unraid terminal with a GitHub
-     personal access token that has the `read:packages` scope.
-3. In Compose Manager, add a new stack (any name) and paste in the
-   contents of `docker-compose.unraid.yml` as its compose config.
-4. In that same stack, add a `.env` file (Compose Manager has a field for
-   this) with at minimum:
-   ```
-   N3D_API_KEY=...
-   ADMIN_PASSWORD=...
-   SESSION_SECRET=...
-   ```
-   Add the SMTP/Square variables the same way if you're using those — see
-   `docker-compose.unraid.yml` for the full list; anything left out defaults
-   to blank/disabled.
-5. Compose it up — this pulls the image rather than building it. First run
-   creates `/mnt/user/appdata/n3d-catalog` if it doesn't already exist.
-6. Visit `http://<unraid-ip>:8090/admin`, log in, and run **Sync from N3D**.
-
-To pick up a newer image later (after a future update lands on `main`),
-re-pull and recreate the container — Compose Manager's **Update** button
-does this, or run `docker compose pull && docker compose up -d` from that
-stack's folder.
-
-Leave `COOKIE_SECURE=false` (the default in that file) unless you're
-putting this behind HTTPS — see the callout above; it applies here too, and
-is the single most common way this breaks on a home server setup like
-Unraid's, since most people reach it via a raw LAN IP:port.
-
-## Day-to-day use
-
-- **Sync from N3D**: pulls new/changed designs from the API. Safe to run
-  often — it only fetches what changed after the first full sync.
-- **New designs default to visible with no price** — they'll show "Ask for
-  pricing" and a "Request a quote" button on the storefront until you set a
-  price and/or shop link.
-- **Set a shop link** → storefront shows "Order online" linking there,
-  alongside the option to still add it to a quote request.
-- **Leave the shop link blank** → the design can still be added to a quote
-  request; the customer gets a PDF with estimated price and lead time
-  (see "Quotes: how it works" above).
-- **Uncheck Visible** to pull a design off the public site without deleting
-  anything — your price/link stay saved if you turn it back on later.
-- **Pixel-art sprites**: character (Pokémon) designs get a small pixel-art
-  sprite badge on their card and detail photo automatically once N3D
-  generates one — no admin action needed, it just shows up after a sync.
-  Poke Balls, stands, and Extras don't have sprites (they aren't Pokémon),
-  and a brand-new character design may take a sync or two before its sprite
-  appears. A regular (incremental) sync only asks N3D for what's changed,
-  which can miss a sprite that appeared on a design that's otherwise
-  unchanged — so a normal "Sync from N3D" click automatically does one
-  extra full-catalog pass to backfill any still-missing sprites, but only
-  when at least one character design doesn't have one yet. Once every
-  character design has its sprite, that extra pass stops happening and
-  syncing goes back to just the incremental request.
-
-## Pushing designs to Square
-
-`/admin` → **Square catalog push** lets you push a design's photo and
-description into your Square catalog as an item, with its price left at
-**$0** so you can set the real price yourself in Square (Square Online,
-Square POS, wherever you manage pricing). Push a single design from its row
-in the Designs table, or use **Push all visible designs to Square** to send
-everything at once.
-
-Re-pushing an already-synced design updates the same Square item in place
-(name, description, and photo if it changed) instead of creating a
-duplicate.
-
-To enable it, set in your environment:
-
-- `SQUARE_ACCESS_TOKEN` — a Square API access token (Square Developer
-  Dashboard → your application → Credentials)
-- `SQUARE_LOCATION_ID` — the location the item should be attached to
-- `SQUARE_ENVIRONMENT` — `sandbox` to test against Square's sandbox, or
-  leave unset for production
-
-Leave these unset to skip the feature entirely — nothing else in the app
-depends on them.
-
-## Notes / things worth knowing
-
-- Data persistence: `docker-compose.yml` mounts a named volume
-  (`n3d_catalog_data`) at `/app/data`, so your pricing and links survive
-  container rebuilds/redeploys. Don't remove that volume unless you mean to
-  start over.
-- Sessions use an in-memory store, so logging into `/admin` won't survive a
-  container restart — you'll just need to log back in, nothing is lost.
-- This was built and tested as a Node app directly; the Docker image itself
-  wasn't build-tested in the environment this was generated in (no Docker
-  daemon available there). The Dockerfile is a plain `node:20-alpine` +
-  `npm install` build with nothing unusual in it, but give it a first local
-  `docker compose up --build` before pushing it into your real Portainer
-  stack, just to be safe.
+- Data (designs, prices, quotes, settings) lives in `/app/data/db.json` on the
+  `n3d_catalog_data` volume. Back up that volume.
+- If SMTP isn't configured, quotes are still saved and the customer can still
+  open their PDF; the Quotes tab shows the email as not sent, and you can
+  resend once SMTP works.
+- Square token scopes: `ITEMS_READ`, `ITEMS_WRITE`, and `MERCHANT_PROFILE_READ`
+  (for the connection test).
+- Admin logins are in memory, so a container restart logs you out. Nothing else is lost.
+- Quote submissions are rate limited per IP (8 per 10 minutes) and have a
+  honeypot field for bots.

@@ -1,549 +1,274 @@
 (function(){
   "use strict";
+  var $ = function(id){ return document.getElementById(id); };
+  var CART_KEY = "n3dcat-cart";
+  var KIOSK_KEY = "n3dcat-kiosk";
 
-  let designs = [];
-  let settings = {
-    businessName: "", businessEmail: "", quoteEmailEnabled: false,
-    eventModeEnabled: false, kioskModeEnabled: false, kioskIdleMinutes: 2
-  };
-  let currentFilter = { cat: "all", q: "", type: "all" };
+  var designs = [], bySlug = {}, settings = {}, filter = { cat:"all", q:"" };
+  var cart = loadCart();
+  var lastFocus = null;
 
-  const grid = document.getElementById("grid");
-  const featuredSection = document.getElementById("featured-section");
-  const featuredGrid = document.getElementById("featured-grid");
-  const resultCount = document.getElementById("result-count");
-  const emptyState = document.getElementById("empty-state");
-  const searchInput = document.getElementById("search-input");
-  const chipRow = document.getElementById("category-chips");
-  const typeChipRow = document.getElementById("type-chips");
-  const businessNameEl = document.getElementById("business-name");
-  const heroSub = document.getElementById("hero-sub");
-  const modalBackdrop = document.getElementById("modal-backdrop");
-  const modal = document.getElementById("modal");
-  const cartBtn = document.getElementById("quote-cart-btn");
-  const cartCountEl = document.getElementById("quote-cart-count");
-  const quoteBackdrop = document.getElementById("quote-backdrop");
-  const quoteModal = document.getElementById("quote-modal");
-  const offlineBanner = document.getElementById("offline-banner");
-  const kioskToast = document.getElementById("kiosk-toast");
-  const tileSizeRow = document.getElementById("tile-size-row");
+  // ---------- kiosk mode (?kiosk=1 to turn on for this device, ?kiosk=0 to turn off) ----------
+  var params = new URLSearchParams(location.search);
+  try {
+    if (params.get("kiosk") === "1") localStorage.setItem(KIOSK_KEY, "1");
+    if (params.get("kiosk") === "0") localStorage.removeItem(KIOSK_KEY);
+  } catch(e){}
+  var kiosk = false;
+  try { kiosk = localStorage.getItem(KIOSK_KEY) === "1"; } catch(e){}
+  if (kiosk) document.body.classList.add("kiosk");
 
-  const DESIGNS_CACHE_KEY = "catalogDesignsCache";
-  const SETTINGS_CACHE_KEY = "catalogSettingsCache";
-  const PENDING_QUOTES_KEY = "pendingQuoteRequests";
-  const TILE_SIZE_KEY = "catalogTileSize";
+  function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+  function safeUrl(u){ return /^https?:\/\//i.test(u || "") ? u : ""; }
+  function safeColor(c){ return /^#[0-9a-f]{3,8}$/i.test(c || "") ? c : "#888"; }
+  function money(cents){ return (cents/100).toLocaleString("en-US", { style:"currency", currency: settings.currency || "USD" }); }
 
-  // ---- tile size (large/medium/small tiles on phone widths) ----
-  function applyTileSize(size){
-    document.body.dataset.tileSize = size;
-    tileSizeRow.querySelectorAll(".tile-size-btn").forEach(btn => {
-      btn.classList.toggle("active", btn.dataset.size === size);
-    });
-    try{ localStorage.setItem(TILE_SIZE_KEY, size); }catch(e){}
+  function loadCart(){ try { return JSON.parse(localStorage.getItem(CART_KEY)) || {}; } catch(e){ return {}; } }
+  function saveCart(){ try { localStorage.setItem(CART_KEY, JSON.stringify(cart)); } catch(e){} updateCount(); }
+  function cartCount(){ var n = 0; for (var k in cart) if (bySlug[k]) n += cart[k]; return n; }
+  function updateCount(){ $("quote-count").textContent = cartCount(); }
+
+  function toast(msg){
+    var t = $("toast"); t.textContent = msg; t.hidden = false;
+    clearTimeout(toast._t); toast._t = setTimeout(function(){ t.hidden = true; }, 1800);
   }
-  tileSizeRow.addEventListener("click", (e) => {
-    const btn = e.target.closest(".tile-size-btn");
-    if(!btn) return;
-    applyTileSize(btn.dataset.size);
-  });
-  let savedTileSize = "small";
-  try{ savedTileSize = localStorage.getItem(TILE_SIZE_KEY) || "small"; }catch(e){}
-  applyTileSize(savedTileSize);
 
-  // ---- quote cart (slugs the customer wants a quote for) ----
-  let cart = [];
-  try{ cart = JSON.parse(sessionStorage.getItem("quoteCart") || "[]"); }catch(e){ cart = []; }
-
-  function saveCart(){
-    try{ sessionStorage.setItem("quoteCart", JSON.stringify(cart)); }catch(e){}
-    updateCartUi();
-  }
-  function inCart(slug){ return cart.includes(slug); }
-  function toggleCart(slug){
-    if(inCart(slug)) cart = cart.filter(s => s !== slug);
-    else cart.push(slug);
+  // ---------- load ----------
+  Promise.all([
+    fetch("/api/public/settings").then(function(r){ return r.json(); }),
+    fetch("/api/public/designs").then(function(r){ return r.json(); })
+  ]).then(function(res){
+    settings = res[0] || {};
+    designs = (res[1] && res[1].data) || [];
+    designs.forEach(function(d){ bySlug[d.slug] = d; });
+    var name = settings.businessName || "Design Catalog";
+    document.title = name;
+    $("brand").textContent = name;
+    applyLogo(settings.logo, settings.logoShowName);
+    $("hero-title").textContent = name;
+    $("hero-tagline").textContent = settings.tagline || "";
+    $("site-footer").textContent = "Prices marked \u201cest.\u201d are estimates based on filament and print time. Every quote is confirmed by email before printing.";
+    for (var k in cart) if (!bySlug[k]) delete cart[k];
     saveCart();
-  }
-  function removeFromCart(slug){
-    cart = cart.filter(s => s !== slug);
-    saveCart();
-  }
-  function updateCartUi(){
-    cartCountEl.textContent = cart.length;
-    cartBtn.style.display = cart.length ? "flex" : "none";
-    document.querySelectorAll(".quote-toggle").forEach(btn => {
-      btn.classList.toggle("added", inCart(btn.dataset.slug));
-      btn.textContent = inCart(btn.dataset.slug) ? "✓" : "+";
-    });
-  }
-
-  function escapeHtml(s){
-    return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-  }
-
-  async function init(){
-    if("serviceWorker" in navigator){
-      navigator.serviceWorker.register("/sw.js").catch(() => {});
-    }
-
-    try{
-      const [settingsRes, designsRes] = await Promise.all([
-        fetch("/api/public/settings").then(r => r.json()),
-        fetch("/api/public/designs").then(r => r.json())
-      ]);
-      settings = settingsRes;
-      designs = designsRes.data || [];
-      try{
-        localStorage.setItem(SETTINGS_CACHE_KEY, JSON.stringify(settings));
-        localStorage.setItem(DESIGNS_CACHE_KEY, JSON.stringify({ designs, cachedAt: new Date().toISOString() }));
-      }catch(e){}
-      offlineBanner.classList.remove("show");
-      applySettingsUi();
-      buildTypeChips();
-      render();
-      updateCartUi();
-      startKioskTimer();
-      flushPendingQuotes();
-    }catch(err){
-      // network failed — fall back to whatever we last cached on this device
-      let cachedDesigns = null, cachedSettings = null;
-      try{ cachedSettings = JSON.parse(localStorage.getItem(SETTINGS_CACHE_KEY) || "null"); }catch(e){}
-      try{ cachedDesigns = JSON.parse(localStorage.getItem(DESIGNS_CACHE_KEY) || "null"); }catch(e){}
-
-      if(cachedDesigns && cachedSettings){
-        settings = cachedSettings;
-        designs = cachedDesigns.designs || [];
-        applySettingsUi();
-        buildTypeChips();
-        render();
-        updateCartUi();
-        startKioskTimer();
-        const when = new Date(cachedDesigns.cachedAt);
-        offlineBanner.textContent = "You're offline — showing the catalog from " +
-          (isNaN(when) ? "your last visit" : when.toLocaleString([], { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" })) + ".";
-        offlineBanner.classList.add("show");
-      } else {
-        resultCount.textContent = "Couldn't load the catalog — check your connection and try again.";
-      }
-    }
-
-    window.addEventListener("online", () => { offlineBanner.classList.remove("show"); flushPendingQuotes(); });
-  }
-
-  function applySettingsUi(){
-    if(settings.businessName) businessNameEl.textContent = settings.businessName;
-    heroSub.textContent = settings.eventModeEnabled
-      ? "Here's what we brought today — ask us about anything else in the full catalog."
-      : "Browse available designs — order online or request a quote.";
-  }
-
-  searchInput.addEventListener("input", () => {
-    currentFilter.q = searchInput.value.trim().toLowerCase();
     render();
+  }).catch(function(){
+    $("result-count").textContent = "The catalog didn't load. Check your connection and refresh the page.";
   });
 
-  // ---- Pokémon type colors (matching the games' type-badge palette) ----
-  const TYPE_COLORS = {
-    normal:"#A8A878", fire:"#F08030", water:"#6890F0", electric:"#F8D030",
-    grass:"#78C850", ice:"#98D8D8", fighting:"#C03028", poison:"#A040A0",
-    ground:"#E0C068", flying:"#A890F0", psychic:"#F85888", bug:"#A8B820",
-    rock:"#B8A038", ghost:"#705898", dragon:"#7038F8", dark:"#705848",
-    steel:"#B8B8D0", fairy:"#EE99AC"
-  };
-  function typeColor(t){ return TYPE_COLORS[String(t).toLowerCase()] || "#68A090"; }
+  function applyLogo(logo, showName){
+    var light = $("logo-light"), dark = $("logo-dark");
+    if (!logo || !logo.light) return;
+    light.src = logo.light; dark.src = logo.dark;
+    light.alt = dark.alt = settings.businessName || "Logo";
+    light.hidden = false;
+    // only render the second <img> when a real dark version exists
+    var distinct = logo.dark !== logo.light;
+    dark.hidden = !distinct;
+    light.classList.toggle("has-dark", distinct);
+    dark.classList.toggle("has-light", distinct);
+    if (showName === false) { $("brand").classList.add("sr-only"); light.alt = dark.alt = ""; }
+    $("favicon").href = logo.light;
+  }
 
-  chipRow.addEventListener("click", (e) => {
-    const btn = e.target.closest(".chip");
-    if(!btn) return;
-    const wasActive = btn.classList.contains("active");
-    chipRow.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
-    if(wasActive && btn.dataset.cat !== "all"){
-      chipRow.querySelector('[data-cat="all"]').classList.add("active");
-      currentFilter.cat = "all";
-    } else {
-      btn.classList.add("active");
-      currentFilter.cat = btn.dataset.cat;
-    }
-    render();
+  // ---------- filters ----------
+  $("search").addEventListener("input", function(e){ filter.q = e.target.value.trim().toLowerCase(); render(); });
+  $("chips").addEventListener("click", function(e){
+    var b = e.target.closest(".chip"); if (!b) return;
+    [].forEach.call(this.querySelectorAll(".chip"), function(c){ c.classList.toggle("active", c === b); });
+    filter.cat = b.dataset.cat; render();
   });
+  $("clear-filters").addEventListener("click", function(){ $("search").value = ""; filter.q = ""; render(); });
 
-  typeChipRow.addEventListener("click", (e) => {
-    const btn = e.target.closest(".chip");
-    if(!btn) return;
-    const wasActive = btn.classList.contains("active");
-    typeChipRow.querySelectorAll(".chip").forEach(c => c.classList.remove("active"));
-    if(wasActive && btn.dataset.type !== "all"){
-      typeChipRow.querySelector('[data-type="all"]').classList.add("active");
-      currentFilter.type = "all";
-    } else {
-      btn.classList.add("active");
-      currentFilter.type = btn.dataset.type;
-    }
-    render();
-  });
+  function matches(d){
+    if (filter.cat !== "all" && d.category !== filter.cat) return false;
+    if (!filter.q) return true;
+    var p = d.pokemon || {};
+    var hay = [d.title, d.slug, p.name, p.pokedex_number, (p.types || []).join(" ")].join(" ").toLowerCase();
+    return filter.q.split(/\s+/).every(function(w){ return hay.indexOf(w) !== -1; });
+  }
 
-  function buildTypeChips(){
-    const types = new Set();
-    for(const d of designs){
-      if(d.pokemon && Array.isArray(d.pokemon.types)){
-        for(const t of d.pokemon.types) if(t) types.add(t);
-      }
-    }
-    const sorted = Array.from(types).sort((a, b) => a.localeCompare(b));
-    typeChipRow.style.display = sorted.length ? "flex" : "none";
-    if(!sorted.length){
-      currentFilter.type = "all";
-      return;
-    }
-    typeChipRow.innerHTML = '<button class="chip active" data-type="all">All types</button>';
-    const frag = document.createDocumentFragment();
-    for(const t of sorted){
-      const btn = document.createElement("button");
-      btn.className = "chip chip-type";
-      btn.dataset.type = t;
-      btn.textContent = t;
-      const color = typeColor(t);
-      btn.style.background = color;
-      btn.style.borderColor = color;
-      btn.style.color = "#fff";
-      frag.appendChild(btn);
-    }
-    typeChipRow.appendChild(frag);
+  function spool(d){
+    var f = (d.filaments || []).filter(function(x){ return x.weight_grams > 0; });
+    if (!f.length) return '<div class="spool" aria-hidden="true"></div>';
+    var total = f.reduce(function(s,x){ return s + x.weight_grams; }, 0);
+    return '<div class="spool" aria-hidden="true">' + f.map(function(x){
+      return '<span style="flex:' + (x.weight_grams/total).toFixed(4) + ';background:' + safeColor(x.hex_color) + '"></span>';
+    }).join("") + '</div>';
+  }
+
+  function priceHtml(d){
+    return esc(d.price) + (d.price_is_estimate ? ' <small>est.</small>' : '');
   }
 
   function render(){
-    let list = designs;
-    if(currentFilter.cat !== "all") list = list.filter(d => d.category === currentFilter.cat);
-    if(currentFilter.type !== "all") list = list.filter(d => d.pokemon && Array.isArray(d.pokemon.types) && d.pokemon.types.includes(currentFilter.type));
-    if(currentFilter.q){
-      const q = currentFilter.q;
-      list = list.filter(d => {
-        const hay = [d.title, d.slug, d.pokemon && d.pokemon.name, d.pokemon && String(d.pokemon.pokedex_number)]
-          .filter(Boolean).join(" ").toLowerCase();
-        return hay.includes(q);
-      });
-    }
-    resultCount.textContent = list.length + (list.length === 1 ? " design" : " designs");
-    emptyState.classList.toggle("show", list.length === 0);
-
-    // Featured grouping only makes sense in normal mode (event mode already
-    // filters the whole catalog down to featured items server-side) and only
-    // at the default view — once someone searches or picks a category, just
-    // show the flat filtered results like any other catalog.
-    const showFeaturedSplit = !settings.eventModeEnabled && currentFilter.cat === "all" && currentFilter.type === "all" && !currentFilter.q &&
-      designs.some(d => d.is_featured);
-
-    if(showFeaturedSplit){
-      const featured = designs.filter(d => d.is_featured);
-      featuredGrid.innerHTML = "";
-      const ffrag = document.createDocumentFragment();
-      for(const d of featured) ffrag.appendChild(buildCard(d));
-      featuredGrid.appendChild(ffrag);
-      featuredSection.style.display = "block";
-    } else {
-      featuredSection.style.display = "none";
-    }
-
-    grid.innerHTML = "";
-    const frag = document.createDocumentFragment();
-    for(const d of list) frag.appendChild(buildCard(d));
-    grid.appendChild(frag);
+    var list = designs.filter(matches);
+    $("result-count").textContent = list.length + (list.length === 1 ? " design" : " designs");
+    $("empty").hidden = list.length > 0 || designs.length === 0;
+    if (!designs.length) $("result-count").textContent = "No designs are listed yet.";
+    $("grid").innerHTML = list.map(function(d){
+      var p = d.pokemon;
+      var meta = p ? ((p.pokedex_number ? "#" + p.pokedex_number + " " : "") + (p.types || []).join(" / ")) : (d.category || "");
+      var n = cart[d.slug] || 0;
+      return '<article class="card" data-slug="' + esc(d.slug) + '" tabindex="0" role="button" aria-label="' + esc(d.title) + '">' +
+        '<div class="thumb">' + (d.image_url ? '<img loading="lazy" alt="" src="' + esc(safeUrl(d.image_url)) + '">' : '') +
+        (d.is_extra ? '<span class="tag">Limited</span>' : '') + '</div>' + spool(d) +
+        '<div class="card-body"><div class="card-title">' + esc(d.title) + '</div>' +
+        '<div class="card-meta">' + esc(meta) + '</div>' +
+        '<div class="card-foot"><span class="price">' + priceHtml(d) + '</span>' +
+        '<button type="button" class="add' + (n ? ' in' : '') + '" data-add="' + esc(d.slug) + '">' + (n ? "Added \u00d7" + n : "Add") + '</button></div>' +
+        '</div></article>';
+    }).join("");
   }
 
-  function buildCard(d){
-    const card = document.createElement("div");
-    card.className = "card";
-    card.addEventListener("click", () => openModal(d));
-
-    const thumbWrap = document.createElement("div");
-    thumbWrap.className = "card-thumb-wrap";
-    if(d.image_url){
-      const img = document.createElement("img");
-      img.src = d.image_url; img.loading = "lazy"; img.alt = d.title;
-      thumbWrap.appendChild(img);
-    }
-    if(d.is_extra){
-      const b = document.createElement("div"); b.className = "badge"; b.textContent = "limited";
-      thumbWrap.appendChild(b);
-    }
-    if(d.sprite_url){
-      const spriteWrap = document.createElement("div");
-      spriteWrap.className = "sprite-badge";
-      const sprite = document.createElement("img");
-      sprite.src = d.sprite_url; sprite.loading = "lazy"; sprite.alt = "";
-      spriteWrap.appendChild(sprite);
-      thumbWrap.appendChild(spriteWrap);
-    }
-    const qToggle = document.createElement("button");
-    qToggle.className = "quote-toggle" + (inCart(d.slug) ? " added" : "");
-    qToggle.textContent = inCart(d.slug) ? "✓" : "+";
-    qToggle.dataset.slug = d.slug;
-    qToggle.title = "Add to quote request";
-    qToggle.addEventListener("click", (e) => { e.stopPropagation(); toggleCart(d.slug); });
-    thumbWrap.appendChild(qToggle);
-    card.appendChild(thumbWrap);
-
-    const body = document.createElement("div");
-    body.className = "card-body";
-    const title = document.createElement("div");
-    title.className = "card-title"; title.textContent = d.title;
-    body.appendChild(title);
-    const bottom = document.createElement("div");
-    bottom.className = "card-bottom";
-    const price = document.createElement("span");
-    if(d.has_price){
-      price.className = "card-price"; price.textContent = d.price;
-    } else {
-      price.className = "card-price unset"; price.textContent = "Ask for pricing";
-    }
-    bottom.appendChild(price);
-    body.appendChild(bottom);
-    card.appendChild(body);
-    return card;
-  }
-
-  function openModal(d){
-    modal.innerHTML = renderModalHtml(d);
-    modalBackdrop.classList.add("show");
-    document.getElementById("modal-close-btn").addEventListener("click", closeModal);
-    const qToggle = document.getElementById("modal-quote-toggle");
-    qToggle.addEventListener("click", () => {
-      toggleCart(d.slug);
-      const added = inCart(d.slug);
-      qToggle.classList.toggle("added", added);
-      qToggle.textContent = added ? "✓ Added to quote request" : "+ Add to quote request";
-    });
-  }
-  function closeModal(){ modalBackdrop.classList.remove("show"); }
-  modalBackdrop.addEventListener("click", (e) => { if(e.target === modalBackdrop) closeModal(); });
-
-  function cartMailtoFallback(items, customer){
-    if(!settings.businessEmail) return null;
-    const subject = encodeURIComponent("Quote request (" + items.length + " design" + (items.length > 1 ? "s" : "") + ")");
-    const lines = items.map(d => "- " + d.title + (d.has_price ? " (" + d.price + ")" : " (price on request)"));
-    const bodyParts = [
-      "Hi, I'd like a quote for the following design(s):",
-      "",
-      lines.join("\n"),
-      "",
-      customer && customer.notes ? "Notes: " + customer.notes : "",
-      ""
-    ].filter(Boolean);
-    const body = encodeURIComponent(bodyParts.join("\n"));
-    return "mailto:" + settings.businessEmail + "?subject=" + subject + "&body=" + body;
-  }
-
-  // ---- quote request modal ----
-  cartBtn.addEventListener("click", openQuoteModal);
-  quoteBackdrop.addEventListener("click", (e) => { if(e.target === quoteBackdrop) closeQuoteModal(); });
-
-  function openQuoteModal(){
-    renderQuoteModal();
-    quoteBackdrop.classList.add("show");
-  }
-  function closeQuoteModal(){ quoteBackdrop.classList.remove("show"); }
-
-  function renderQuoteModal(){
-    const items = designs.filter(d => cart.includes(d.slug));
-    let html = '<h2>Request a quote</h2>';
-    if(items.length === 0){
-      html += '<div class="qm-empty">No designs added yet — tap the + on any design to add it here.</div>';
-      quoteModal.innerHTML = html;
-      return;
-    }
-    for(const d of items){
-      html += '<div class="qm-item">';
-      html += d.image_url ? '<img src="' + escapeHtml(d.image_url) + '" alt="">' : '<div style="width:36px;height:36px;"></div>';
-      html += '<div class="name">' + escapeHtml(d.title) + '</div>';
-      html += '<div style="color:var(--text-faint);font-size:0.78rem;">' + (d.has_price ? escapeHtml(d.price) : "TBD") + '</div>';
-      html += '<button class="remove" data-slug="' + escapeHtml(d.slug) + '">✕</button>';
-      html += '</div>';
-    }
-    html += '<div class="qm-field"><label for="qm-name">Name</label><input id="qm-name" type="text" placeholder="Your name"></div>';
-    html += '<div class="qm-field"><label for="qm-email">Email' + (settings.quoteEmailEnabled ? ' (we\'ll send your PDF quote here)' : '') + '</label><input id="qm-email" type="email" placeholder="you@example.com" required></div>';
-    html += '<div class="qm-field"><label for="qm-notes">Notes (optional)</label><textarea id="qm-notes" rows="3" placeholder="Colors, quantities, deadlines…"></textarea></div>';
-    html += '<button id="quote-submit-btn">' + (settings.quoteEmailEnabled ? "Email me a PDF quote" : "Request a quote") + '</button>';
-    html += '<div id="quote-form-status"></div>';
-    quoteModal.innerHTML = html;
-
-    quoteModal.querySelectorAll(".remove").forEach(btn => {
-      btn.addEventListener("click", () => { removeFromCart(btn.dataset.slug); renderQuoteModal(); });
-    });
-    document.getElementById("quote-submit-btn").addEventListener("click", () => submitQuote(items));
-  }
-
-  async function submitQuote(items){
-    const nameEl = document.getElementById("qm-name");
-    const emailEl = document.getElementById("qm-email");
-    const notesEl = document.getElementById("qm-notes");
-    const submitBtn = document.getElementById("quote-submit-btn");
-    const status = document.getElementById("quote-form-status");
-    const customer = { name: nameEl.value.trim(), email: emailEl.value.trim(), notes: notesEl.value.trim() };
-
-    if(!customer.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customer.email)){
-      status.className = "err"; status.textContent = "Enter a valid email address.";
-      return;
-    }
-
-    if(!settings.quoteEmailEnabled){
-      const mailto = cartMailtoFallback(items, customer);
-      if(mailto){ window.location.href = mailto; }
-      else { status.className = "err"; status.textContent = "Quotes aren't available right now — please contact us directly."; }
-      return;
-    }
-
-    const payload = { name: customer.name, email: customer.email, notes: customer.notes, slugs: items.map(d => d.slug) };
-
-    submitBtn.disabled = true;
-    status.className = ""; status.textContent = "Sending…";
-    try{
-      const res = await fetch("/api/public/quote-request", {
-        method: "POST", headers: {"Content-Type":"application/json"},
-        body: JSON.stringify(payload)
-      });
-      const j = await res.json();
-      if(!res.ok) throw new Error(j.error || "Something went wrong.");
-      status.className = "ok";
-      status.textContent = "Quote sent to " + customer.email + " — check your inbox in a minute.";
-      cart = []; saveCart();
-      setTimeout(closeQuoteModal, 2200);
-    }catch(err){
-      if(err instanceof TypeError){
-        // fetch only throws TypeError for actual network failures, not HTTP error statuses
-        queuePendingQuote(payload);
-        status.className = "ok";
-        status.textContent = "You're offline — this quote is saved and will send automatically once you're back online.";
-        cart = []; saveCart();
-        setTimeout(closeQuoteModal, 2600);
-      } else {
-        status.className = "err";
-        status.textContent = err.message || "Couldn't send that — please try again.";
-      }
-    }finally{
-      submitBtn.disabled = false;
-    }
-  }
-
-  // ---- offline quote queue ----
-  function getPendingQuotes(){
-    try{ return JSON.parse(localStorage.getItem(PENDING_QUOTES_KEY) || "[]"); }catch(e){ return []; }
-  }
-  function setPendingQuotes(list){
-    try{ localStorage.setItem(PENDING_QUOTES_KEY, JSON.stringify(list)); }catch(e){}
-  }
-  function queuePendingQuote(payload){
-    const list = getPendingQuotes();
-    list.push(payload);
-    setPendingQuotes(list);
-  }
-  async function flushPendingQuotes(){
-    const list = getPendingQuotes();
-    if(!list.length) return;
-    const remaining = [];
-    for(const payload of list){
-      try{
-        const res = await fetch("/api/public/quote-request", {
-          method: "POST", headers: {"Content-Type":"application/json"},
-          body: JSON.stringify(payload)
-        });
-        if(!res.ok && res.status !== 400){
-          // server reachable but failed for a non-client reason (e.g. SMTP down) — try again later
-          remaining.push(payload);
-        }
-        // ok, or a 400 (bad request we can't fix by retrying) — drop it either way
-      }catch(err){
-        remaining.push(payload); // still offline — keep it queued
-      }
-    }
-    setPendingQuotes(remaining);
-  }
-
-  // ---- kiosk mode: reset the storefront after a stretch of inactivity ----
-  let kioskTimer = null;
-  function startKioskTimer(){
-    clearTimeout(kioskTimer);
-    if(!settings.kioskModeEnabled) return;
-    const ms = Math.max(0.5, settings.kioskIdleMinutes || 2) * 60 * 1000;
-    kioskTimer = setTimeout(doKioskReset, ms);
-  }
-  ["pointerdown", "keydown", "scroll", "touchstart"].forEach(evt => {
-    window.addEventListener(evt, () => { if(settings.kioskModeEnabled) startKioskTimer(); }, { passive: true });
+  $("grid").addEventListener("click", function(e){
+    var add = e.target.closest("[data-add]");
+    if (add){ e.stopPropagation(); addToCart(add.dataset.add); return; }
+    var card = e.target.closest(".card"); if (card) openDetail(card.dataset.slug);
+  });
+  $("grid").addEventListener("keydown", function(e){
+    if ((e.key === "Enter" || e.key === " ") && e.target.classList.contains("card")){ e.preventDefault(); openDetail(e.target.dataset.slug); }
   });
 
-  function doKioskReset(){
-    closeModal();
-    closeQuoteModal();
-    cart = []; saveCart();
-    currentFilter = { cat: "all", q: "", type: "all" };
-    searchInput.value = "";
-    chipRow.querySelectorAll(".chip").forEach(c => c.classList.toggle("active", c.dataset.cat === "all"));
-    typeChipRow.querySelectorAll(".chip").forEach(c => c.classList.toggle("active", c.dataset.type === "all"));
-    window.scrollTo({ top: 0, behavior: "auto" });
-    render();
-    showKioskToast("Ready for the next guest");
-    startKioskTimer();
+  function addToCart(slug, qty){
+    cart[slug] = (cart[slug] || 0) + (qty || 1);
+    saveCart(); render();
+    toast("Added " + bySlug[slug].title);
   }
 
-  function showKioskToast(text){
-    kioskToast.textContent = text;
-    kioskToast.classList.add("show");
-    setTimeout(() => kioskToast.classList.remove("show"), 2200);
+  // ---------- detail ----------
+  function openOverlay(el){ lastFocus = document.activeElement; el.hidden = false; document.body.style.overflow = "hidden"; }
+  function closeOverlay(el){ el.hidden = true; if ($("detail").hidden && $("drawer").hidden) document.body.style.overflow = ""; if (lastFocus) lastFocus.focus(); }
+
+  function openDetail(slug){
+    var d = bySlug[slug]; if (!d) return;
+    var p = d.pokemon;
+    var h = '<div class="media">' + (d.image_url ? '<img alt="' + esc(d.title) + '" src="' + esc(safeUrl(d.image_url)) + '">' : '') + spool(d) + '</div>';
+    h += '<div class="info"><div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">' +
+      '<h2 id="detail-title">' + esc(d.title) + '</h2><button type="button" class="btn ghost small" data-close>Close</button></div>';
+    if (p && p.types && p.types.length) h += '<div class="types">' + p.types.map(function(t){ return '<span>' + esc(t) + '</span>'; }).join("") + '</div>';
+    if (p && p.description) h += '<p class="flavor">' + esc(p.description) + '</p>';
+    h += '<dl class="specs"><div><dt>Price</dt><dd>' + priceHtml(d) + '</dd></div>' +
+      '<div><dt>Print time</dt><dd>' + esc(d.print_time || "\u2014") + '</dd></div>' +
+      '<div><dt>Weight</dt><dd>' + (d.total_weight_grams ? Math.round(d.total_weight_grams) + " g" : "\u2014") + '</dd></div></dl>';
+    if (d.filaments && d.filaments.length){
+      h += '<ul class="filaments">' + d.filaments.map(function(f){
+        return '<li><span class="swatch" style="background:' + safeColor(f.hex_color) + '"></span>' + esc(f.color) +
+          (f.series ? ' <span style="color:var(--faint)">' + esc(f.series) + '</span>' : '') +
+          '<span class="g">' + (f.weight_grams ? Math.round(f.weight_grams) + " g" : "") + '</span></li>';
+      }).join("") + '</ul>';
+    }
+    if (d.price_is_estimate) h += '<p class="estimate-note">Estimated from filament and print time. We confirm the final price before printing.</p>';
+    h += '<div class="actions"><button type="button" class="btn primary" data-detail-add="' + esc(d.slug) + '">Add to quote</button>';
+    if (d.shop_url && !kiosk && safeUrl(d.shop_url)) h += '<a class="btn" href="' + esc(safeUrl(d.shop_url)) + '" target="_blank" rel="noopener">Buy online</a>';
+    h += '</div></div>';
+    $("detail-body").innerHTML = h;
+    openOverlay($("detail"));
+    $("detail-body").querySelector("[data-close]").focus();
+  }
+  $("detail").addEventListener("click", function(e){
+    if (e.target === this || e.target.closest("[data-close]")) return closeOverlay(this);
+    var a = e.target.closest("[data-detail-add]");
+    if (a){ addToCart(a.dataset.detailAdd); closeOverlay(this); }
+  });
+
+  // ---------- quote drawer ----------
+  var form = { name:"", email:"", phone:"", notes:"" };
+  $("open-quote").addEventListener("click", openDrawer);
+  $("close-drawer").addEventListener("click", function(){ closeOverlay($("drawer")); });
+  $("drawer").addEventListener("click", function(e){ if (e.target === this) closeOverlay(this); });
+  document.addEventListener("keydown", function(e){
+    if (e.key !== "Escape") return;
+    if (!$("detail").hidden) closeOverlay($("detail"));
+    else if (!$("drawer").hidden) closeOverlay($("drawer"));
+  });
+
+  function openDrawer(){ renderDrawer(); openOverlay($("drawer")); $("close-drawer").focus(); }
+
+  function renderDrawer(){
+    var slugs = Object.keys(cart).filter(function(s){ return bySlug[s]; });
+    var c = $("drawer-content");
+    if (!slugs.length){
+      c.innerHTML = '<div class="success"><h3>No designs yet</h3><p>Add designs from the catalog and they\u2019ll show up here with an estimated total.</p>' +
+        '<button type="button" class="btn primary" id="browse">Browse designs</button></div>';
+      $("browse").onclick = function(){ closeOverlay($("drawer")); };
+      return;
+    }
+    var total = 0, anyEst = false;
+    var lines = slugs.map(function(s){
+      var d = bySlug[s], q = cart[s]; total += d.price_cents * q; if (d.price_is_estimate) anyEst = true;
+      return '<div class="line"><img alt="" src="' + esc(safeUrl(d.image_url)) + '">' +
+        '<div><div class="t">' + esc(d.title) + '</div><div class="u">' + priceHtml(d) + ' each</div>' +
+        '<button type="button" class="remove" data-remove="' + esc(s) + '">Remove</button></div>' +
+        '<div class="qty"><button type="button" data-dec="' + esc(s) + '" aria-label="Decrease quantity">\u2212</button><span>' + q +
+        '</span><button type="button" data-inc="' + esc(s) + '" aria-label="Increase quantity">+</button></div></div>';
+    }).join("");
+    c.innerHTML = lines +
+      '<div class="total"><span>Estimated total</span><span class="v">' + money(total) + '</span></div>' +
+      '<p class="fine">' + (anyEst ? "Includes estimated prices. " : "") + 'We\u2019ll email you a PDF of this estimate' + (kiosk ? '.' : ' and send a copy to our team.') + '</p>' +
+      '<form id="quote-form" novalidate>' +
+      '<div class="field"><label for="q-name">Name</label><input id="q-name" name="name" autocomplete="name" required value="' + esc(form.name) + '"></div>' +
+      '<div class="field"><label for="q-email">Email</label><input id="q-email" name="email" type="email" autocomplete="email" required value="' + esc(form.email) + '"></div>' +
+      '<div class="field"><label for="q-phone">Phone (optional)</label><input id="q-phone" name="phone" type="tel" autocomplete="tel" value="' + esc(form.phone) + '"></div>' +
+      '<div class="field"><label for="q-notes">Notes (optional)</label><textarea id="q-notes" name="notes" placeholder="Color changes, size, pickup date">' + esc(form.notes) + '</textarea></div>' +
+      '<input class="hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">' +
+      '<div class="form-error" id="form-error" role="alert"></div>' +
+      '<button class="btn primary" style="width:100%;padding:13px" type="submit" id="send-quote">Email my estimate</button></form>';
   }
 
-  function renderModalHtml(d){
-    const poke = d.pokemon;
-    let html = "";
-    html += '<button class="modal-close" id="modal-close-btn">✕</button>';
-    if(d.image_url){
-      html += '<div class="modal-hero-wrap">';
-      html += '<img class="modal-hero" src="' + escapeHtml(d.image_url) + '" alt="">';
-      if(d.sprite_url) html += '<div class="sprite-badge modal-sprite-badge"><img src="' + escapeHtml(d.sprite_url) + '" alt=""></div>';
-      html += '</div>';
-    }
-    html += '<div class="modal-body">';
-    html += '<h2>' + escapeHtml(d.title) + '</h2>';
-    html += '<div class="modal-sub">';
-    if(poke && poke.types && poke.types.length){
-      html += '<span class="type-badges">' + poke.types.map(t =>
-        '<span class="type-badge" style="background:' + typeColor(t) + '">' + escapeHtml(t) + '</span>'
-      ).join("") + '</span>';
-    }
-    if(d.is_extra) html += '<span class="modal-sub-extra">limited item</span>';
-    html += '</div>';
-    if(poke && poke.description) html += '<div class="modal-flavor">' + escapeHtml(poke.description) + '</div>';
+  $("drawer-content").addEventListener("input", function(e){ if (e.target.name in form) form[e.target.name] = e.target.value; });
+  $("drawer-content").addEventListener("click", function(e){
+    var b;
+    if ((b = e.target.closest("[data-inc]"))) { cart[b.dataset.inc] = Math.min(999, cart[b.dataset.inc] + 1); }
+    else if ((b = e.target.closest("[data-dec]"))) { cart[b.dataset.dec]--; if (cart[b.dataset.dec] < 1) delete cart[b.dataset.dec]; }
+    else if ((b = e.target.closest("[data-remove]"))) { delete cart[b.dataset.remove]; }
+    else return;
+    saveCart(); render(); renderDrawer();
+  });
+  $("drawer-content").addEventListener("submit", function(e){
+    e.preventDefault();
+    var f = e.target, err = $("form-error"), btn = $("send-quote");
+    err.textContent = "";
+    if (!form.name.trim()) { err.textContent = "Enter your name."; return f.name.focus(); }
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) { err.textContent = "Enter a valid email address."; return f.email.focus(); }
+    btn.disabled = true; btn.textContent = "Sending\u2026";
+    fetch("/api/public/quotes", {
+      method:"POST", headers:{ "Content-Type":"application/json" },
+      body: JSON.stringify({
+        name: form.name, email: form.email, phone: form.phone, notes: form.notes,
+        website: f.website.value, kiosk: kiosk,
+        items: Object.keys(cart).map(function(s){ return { slug:s, qty:cart[s] }; })
+      })
+    }).then(function(r){ return r.json().then(function(j){ return { ok:r.ok, j:j }; }); })
+      .then(function(res){
+        if (!res.ok) throw new Error(res.j.error || "The quote didn't send. Try again.");
+        cart = {}; saveCart(); render();
+        form = { name:"", email:"", phone:"", notes:"" };
+        var j = res.j;
+        $("drawer-content").innerHTML = '<div class="success"><h3>Estimate ' + esc(j.id) + ' sent</h3>' +
+          '<p>' + (j.emailed ? "We emailed your PDF estimate. Check your inbox (and spam folder)." : "Your request is saved. We\u2019ll email you the estimate shortly.") +
+          ' Estimated total: <strong>' + esc(j.total) + '</strong>.</p>' +
+          (kiosk ? '' : '<a class="btn" href="' + esc(j.pdf_url) + '" target="_blank" rel="noopener">Open PDF</a>') +
+          '<button type="button" class="btn primary" id="new-quote">Start a new quote</button></div>';
+        $("new-quote").onclick = function(){ closeOverlay($("drawer")); };
+      })
+      .catch(function(ex){ err.textContent = ex.message; btn.disabled = false; btn.textContent = "Email my estimate"; });
+  });
 
-    html += '<div class="stat-grid">';
-    html += statBox("print time", d.print_time || "—");
-    html += statBox("weight", d.total_weight_grams != null ? d.total_weight_grams + " g" : "—");
-    html += statBox("price", d.has_price ? d.price : "Ask");
-    html += '</div>';
-
-    if(d.filaments && d.filaments.length){
-      html += '<div class="section-label">Filaments</div>';
-      for(const f of d.filaments){
-        html += '<div class="filament-row">';
-        html += '<div class="swatch" style="background:' + (f.hex_color || "#444") + '"></div>';
-        html += '<div class="fname">' + escapeHtml(f.color) + ' <span style="color:var(--text-faint)">· ' + escapeHtml(f.series) + '</span></div>';
-        html += '<div class="fgrams">' + f.weight_grams + 'g</div>';
-        html += '</div>';
-      }
-    }
-    html += '</div>'; // modal-body
-
-    html += '<div class="modal-actions">';
-    if(d.shop_url){
-      html += '<a class="cta-btn" href="' + escapeHtml(d.shop_url) + '" target="_blank" rel="noopener">Order online</a>';
-    }
-    html += '<button class="modal-quote-toggle' + (inCart(d.slug) ? ' added' : '') + '" id="modal-quote-toggle" data-slug="' + escapeHtml(d.slug) + '">' +
-      (inCart(d.slug) ? '✓ Added to quote request' : '+ Add to quote request') + '</button>';
-    html += '</div>';
-    return html;
+  // ---------- kiosk idle reset ----------
+  if (kiosk){
+    var idleTimer;
+    var reset = function(){
+      cart = {}; saveCart(); form = { name:"", email:"", phone:"", notes:"" };
+      $("detail").hidden = true; $("drawer").hidden = true; document.body.style.overflow = "";
+      $("search").value = ""; filter = { cat:"all", q:"" };
+      [].forEach.call(document.querySelectorAll(".chip"), function(c){ c.classList.toggle("active", c.dataset.cat === "all"); });
+      render(); window.scrollTo(0, 0);
+    };
+    var bump = function(){
+      clearTimeout(idleTimer);
+      idleTimer = setTimeout(reset, (settings.kioskIdleSeconds || 90) * 1000);
+    };
+    ["pointerdown","keydown","scroll","touchstart"].forEach(function(ev){ document.addEventListener(ev, bump, { passive:true }); });
+    bump();
   }
-
-  function statBox(label, val){
-    return '<div class="stat-box"><div class="label">' + escapeHtml(label) + '</div><div class="val">' + escapeHtml(String(val)) + '</div></div>';
-  }
-
-  updateCartUi();
-  init();
 })();

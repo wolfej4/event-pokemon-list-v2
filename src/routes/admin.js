@@ -1,356 +1,284 @@
 "use strict";
 const express = require("express");
-const QRCode = require("qrcode");
 const db = require("../db");
 const n3d = require("../n3dClient");
 const square = require("../squareClient");
 const mailer = require("../mailer");
+const { formulaCents, unitCents, fmt } = require("../pricing");
+const { buildQuotePdf } = require("../pdf");
 const { checkPassword, requireAdmin } = require("../auth");
-const { rateLimit } = require("../rateLimit");
+const rateLimit = require("../rateLimit");
+const logo = require("../logo");
 
 const router = express.Router();
 
-// ---- auth ----
-const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10 }); // 10 attempts / 15 min / IP
-
-router.post("/login", loginLimiter, (req, res) => {
-  const { password } = req.body || {};
-  if (!checkPassword(password)) {
-    db.addErrorLog({ type: "auth", message: "Wrong admin password entered", path: "/login" });
-    return res.status(401).json({ error: "wrong_password" });
-  }
-  req.session.isAdmin = true;
-  res.json({ ok: true });
+// ---------- auth ----------
+router.post("/login", rateLimit({ windowMs: 15 * 60 * 1000, max: 10 }), (req, res) => {
+  if (!checkPassword((req.body || {}).password)) return res.status(401).json({ error: "Wrong password." });
+  req.session.regenerate(err => {
+    if (err) return res.status(500).json({ error: "session_error" });
+    req.session.isAdmin = true;
+    res.json({ ok: true });
+  });
 });
+router.post("/logout", (req, res) => req.session.destroy(() => res.json({ ok: true })));
+router.get("/session", (req, res) => res.json({ isAdmin: !!(req.session && req.session.isAdmin) }));
 
-router.post("/logout", (req, res) => {
-  req.session.destroy(() => res.json({ ok: true }));
-});
-
-router.get("/session", (req, res) => {
-  res.json({ isAdmin: !!(req.session && req.session.isAdmin) });
-});
-
-// everything below requires a logged-in admin
 router.use(requireAdmin);
 
-// ---- designs ----
+// ---------- status ----------
+router.get("/status", (req, res) => {
+  res.json({
+    n3dKey: !!process.env.N3D_API_KEY,
+    smtp: mailer.configured(),
+    square: square.configured(),
+    squareEnv: process.env.SQUARE_ENV === "sandbox" ? "sandbox" : "production"
+  });
+});
+
+// ---------- designs ----------
+function toAdmin(d, s) {
+  return Object.assign({}, d, {
+    formula_cents: formulaCents(d, s.pricing),
+    effective_cents: unitCents(d, s.pricing)
+  });
+}
+
 router.get("/designs", (req, res) => {
-  const list = db.allDesigns().sort((a, b) => (a.title || "").localeCompare(b.title || ""));
+  const s = db.getSettings();
+  const list = db.allDesigns().map(d => toAdmin(d, s))
+    .sort((a, b) => (a.title || "").localeCompare(b.title || "", undefined, { numeric: true }));
   res.json({ data: list });
 });
 
 router.post("/designs/:slug", (req, res) => {
-  const { slug } = req.params;
-  const existing = db.getDesign(slug);
-  if (!existing) return res.status(404).json({ error: "not_found" });
-
-  const body = req.body || {};
-  const update = {};
-
-  if ("price" in body) {
-    if (body.price === "" || body.price === null) {
-      update.price_cents = null;
-    } else {
-      const dollars = Number(body.price);
-      if (Number.isNaN(dollars) || dollars < 0) {
-        return res.status(400).json({ error: "invalid_price" });
-      }
-      update.price_cents = Math.round(dollars * 100);
+  const d = db.getDesign(req.params.slug);
+  if (!d) return res.status(404).json({ error: "not_found" });
+  const b = req.body || {};
+  const u = {};
+  if ("price" in b) {
+    if (b.price === "" || b.price === null) u.price_cents = null;
+    else {
+      const n = Number(b.price);
+      if (!Number.isFinite(n) || n < 0 || n > 100000) return res.status(400).json({ error: "Price must be a positive number." });
+      u.price_cents = Math.round(n * 100);
     }
   }
-  if ("shop_url" in body) {
-    update.shop_url = body.shop_url ? String(body.shop_url).trim() : null;
+  if ("shop_url" in b) {
+    const url = String(b.shop_url || "").trim();
+    if (url && !/^https?:\/\//i.test(url)) return res.status(400).json({ error: "Shop link must start with http:// or https://" });
+    u.shop_url = url || null;
   }
-  if ("visible" in body) {
-    update.visible = !!body.visible;
-  }
-  if ("featured" in body) {
-    update.featured = !!body.featured;
-  }
-
-  const saved = db.setAdminFields(slug, update);
-  res.json({ data: saved });
+  if ("visible" in b) u.visible = !!b.visible;
+  // null out explicitly (upsert skips undefined, not null)
+  const saved = db.upsertDesign(d.slug, u);
+  res.json({ data: toAdmin(saved, db.getSettings()) });
 });
 
-// ---- settings ----
-router.get("/settings", (req, res) => {
-  res.json(db.getSettings());
+// Bulk: clear all overrides or set visibility
+router.post("/designs-bulk", (req, res) => {
+  const { action, slugs } = req.body || {};
+  const targets = Array.isArray(slugs) && slugs.length ? slugs : db.allDesigns().map(d => d.slug);
+  let n = 0;
+  for (const slug of targets) {
+    if (!db.getDesign(slug)) continue;
+    if (action === "clear_overrides") db.upsertDesign(slug, { price_cents: null });
+    else if (action === "show") db.upsertDesign(slug, { visible: true });
+    else if (action === "hide") db.upsertDesign(slug, { visible: false });
+    else return res.status(400).json({ error: "unknown action" });
+    n++;
+  }
+  res.json({ ok: true, changed: n });
 });
+
+// ---------- settings ----------
+router.get("/settings", (req, res) => res.json(db.getSettings()));
 
 router.post("/settings", (req, res) => {
-  const {
-    businessName, businessEmail, hoursPerDayCapacity, leadTimeBufferDays,
-    eventModeEnabled, kioskModeEnabled, kioskIdleMinutes
-  } = req.body || {};
-  const update = {};
-  if (businessName !== undefined) update.businessName = String(businessName).trim();
-  if (businessEmail !== undefined) update.businessEmail = String(businessEmail).trim();
-  if (hoursPerDayCapacity !== undefined) {
-    const n = Number(hoursPerDayCapacity);
-    if (Number.isNaN(n) || n <= 0) return res.status(400).json({ error: "invalid_hours_per_day" });
-    update.hoursPerDayCapacity = n;
+  const b = req.body || {};
+  const u = {};
+  for (const k of ["businessName", "businessEmail", "businessPhone", "tagline", "quoteFooter"]) {
+    if (b[k] !== undefined) u[k] = String(b[k]).trim().slice(0, 2000);
   }
-  if (leadTimeBufferDays !== undefined) {
-    const n = Number(leadTimeBufferDays);
-    if (Number.isNaN(n) || n < 0) return res.status(400).json({ error: "invalid_buffer_days" });
-    update.leadTimeBufferDays = n;
+  if (b.currency !== undefined) u.currency = /^[A-Z]{3}$/.test(b.currency) ? b.currency : "USD";
+  if (b.kioskIdleSeconds !== undefined) u.kioskIdleSeconds = Math.min(3600, Math.max(15, parseInt(b.kioskIdleSeconds, 10) || 90));
+  if (b.squareOverwritePrices !== undefined) u.squareOverwritePrices = !!b.squareOverwritePrices;
+  if (b.logoShowName !== undefined) u.logoShowName = !!b.logoShowName;
+  if (b.pricing) {
+    u.pricing = {};
+    for (const k of ["baseFee", "perGram", "perHour", "markupPct", "minPrice", "roundTo"]) {
+      if (b.pricing[k] === undefined) continue;
+      const n = Number(b.pricing[k]);
+      if (!Number.isFinite(n) || n < 0) return res.status(400).json({ error: `Pricing value "${k}" must be 0 or more.` });
+      u.pricing[k] = n;
+    }
   }
-  if (eventModeEnabled !== undefined) update.eventModeEnabled = !!eventModeEnabled;
-  if (kioskModeEnabled !== undefined) update.kioskModeEnabled = !!kioskModeEnabled;
-  if (kioskIdleMinutes !== undefined) {
-    const n = Number(kioskIdleMinutes);
-    if (Number.isNaN(n) || n < 0.5) return res.status(400).json({ error: "invalid_kiosk_idle_minutes" });
-    update.kioskIdleMinutes = n;
-  }
-  res.json(db.updateSettings(update));
+  res.json(db.updateSettings(u));
 });
 
-router.get("/smtp-status", (req, res) => {
-  res.json({ configured: mailer.isConfigured() });
-});
-
-router.post("/smtp-test", async (req, res) => {
+// ---------- logo ----------
+router.post("/logo/:variant", express.raw({ type: () => true, limit: "2mb" }), (req, res) => {
   try {
-    await mailer.verifyConnection();
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(err.isNotConfigured ? 400 : 502).json({ ok: false, error: err.message });
+    if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: "Choose an image file." });
+    const meta = logo.save(req.params.variant, req.body);
+    const logos = Object.assign({}, db.getSettings().logos, { [req.params.variant]: meta });
+    const s = db.updateSettings({ logos });
+    res.json({ ok: true, logo: logo.urls(s), logos: s.logos });
+  } catch (e) {
+    res.status(400).json({ error: e.message });
   }
 });
-
-// ---- storefront QR code ----
-// Encodes whatever host/protocol the browser used to reach /admin, so the
-// code always points at wherever this instance is actually being served
-// from (custom domain, tunnel, raw IP:port, whatever) without needing that
-// URL configured anywhere.
-router.get("/qrcode.png", async (req, res) => {
-  const url = req.protocol + "://" + req.get("host") + "/";
-  try {
-    const png = await QRCode.toBuffer(url, { width: 640, margin: 2 });
-    res.setHeader("Content-Type", "image/png");
-    res.setHeader("Cache-Control", "no-store"); // host can change between requests (different domain/tunnel)
-    res.send(png);
-  } catch (err) {
-    res.status(500).json({ error: "qrcode_failed" });
-  }
+router.delete("/logo/:variant", (req, res) => {
+  if (!logo.VARIANTS.includes(req.params.variant)) return res.status(400).json({ error: "Unknown logo variant." });
+  logo.remove(req.params.variant);
+  const logos = Object.assign({}, db.getSettings().logos);
+  delete logos[req.params.variant];
+  const s = db.updateSettings({ logos });
+  res.json({ ok: true, logo: logo.urls(s), logos: s.logos });
 });
 
-router.get("/qrcode-url", (req, res) => {
-  res.json({ url: req.protocol + "://" + req.get("host") + "/" });
-});
-
-// ---- sync ----
-let syncInProgress = false;
-
+// ---------- N3D sync ----------
+let syncing = false;
 router.post("/sync", async (req, res) => {
-  if (syncInProgress) {
-    return res.status(409).json({ error: "sync_already_running" });
-  }
+  if (syncing) return res.status(409).json({ error: "A sync is already running." });
+  syncing = true;
   const full = !!(req.body && req.body.full);
-  syncInProgress = true;
   try {
-    const settings = db.getSettings();
-    const since = full ? null : settings.lastCursor;
     let added = 0, updated = 0;
-
     const result = await n3d.syncCatalog({
-      since,
+      since: full ? null : db.getSettings().lastCursor,
       onPage: async (designs) => {
         for (const d of designs) {
+          if (!d || !d.slug) continue;
           const isNew = !db.getDesign(d.slug);
-          // new designs default to visible=true, no price, no shop link —
-          // "contact for pricing" until the admin sets them
           db.upsertDesign(d.slug, {
-            title: d.title,
-            category: d.category,
-            image_url: d.image_url,
-            sprite_url: d.sprite_url,
-            print_time: d.print_time,
-            print_time_seconds: d.print_time_seconds,
-            total_weight_grams: d.total_weight_grams,
-            round: d.round,
-            purchase_only: d.purchase_only,
-            updated_at: d.updated_at,
-            pokemon: d.pokemon,
-            filaments: d.filaments,
-            profiles: d.profiles,
+            title: d.title, category: d.category, image_url: d.image_url,
+            print_time: d.print_time, total_weight_grams: d.total_weight_grams,
+            round: d.round, purchase_only: d.purchase_only, updated_at: d.updated_at,
+            pokemon: d.pokemon, filaments: d.filaments,
             synced_at: new Date().toISOString(),
+            // first-time defaults; undefined leaves existing admin values alone
             visible: isNew ? true : undefined,
-            featured: isNew ? false : undefined,
             price_cents: isNew ? null : undefined,
             shop_url: isNew ? null : undefined
           });
-          if (isNew) added++; else updated++;
+          isNew ? added++ : updated++;
         }
       }
     });
-
-    db.updateSettings({ lastCursor: result.cursor });
-
-    // Incremental syncs only see designs N3D reports as "changed" — but a
-    // sprite can show up for an existing character design without its
-    // updated_at moving (N3D generates them shortly after a design goes
-    // live), so that design could stay spriteless forever if we only ever
-    // look at what changed. Run one supplementary full-catalog pass to
-    // backfill sprite_url, but only when something is actually missing —
-    // keeps a normal incremental sync cheap in the (eventual) common case
-    // where every character design already has its sprite.
-    let spritesFilled = 0;
-    const pendingSprites = !full && db.allDesigns().some(d => d.category === "character" && !d.sprite_url);
-    if (pendingSprites) {
-      try {
-        await n3d.syncCatalog({
-          since: null,
-          onPage: async (designs) => {
-            for (const d of designs) {
-              const existing = db.getDesign(d.slug);
-              if (existing && !existing.sprite_url && d.sprite_url) {
-                db.upsertDesign(d.slug, { sprite_url: d.sprite_url });
-                spritesFilled++;
-              }
-            }
-          }
-        });
-      } catch (err) {
-        console.error("[sync] sprite backfill pass failed:", err.message);
-      }
-    }
-
-    res.json({ ok: true, added, updated, totalSeen: result.totalSeen, spritesFilled });
-  } catch (err) {
-    const status = err.isAuth ? 502 : 500;
-    db.addErrorLog({
-      type: "sync",
-      message: err.message || "sync_failed",
-      detail: err.isAuth ? "N3D rejected the API key" : undefined
-    });
-    res.status(status).json({ error: err.message || "sync_failed" });
+    if (result.cursor) db.updateSettings({ lastCursor: result.cursor });
+    res.json({ ok: true, added, updated, seen: result.total });
+  } catch (e) {
+    res.status(e.isAuth ? 502 : 500).json({ error: e.message || "Sync failed." });
   } finally {
-    syncInProgress = false;
+    syncing = false;
   }
 });
 
-router.get("/key-status", async (req, res) => {
-  try {
-    const info = await n3d.checkKey();
-    res.json({ ok: true, info });
-  } catch (err) {
-    res.status(err.isAuth ? 401 : 502).json({ ok: false, error: err.message });
-  }
+router.get("/n3d/check", async (req, res) => {
+  try { res.json({ ok: true, info: await n3d.checkKey() }); }
+  catch (e) { res.status(502).json({ ok: false, error: e.message }); }
 });
 
-// ---- Square catalog push ----
-router.get("/square-status", (req, res) => {
-  res.json({ configured: square.isConfigured() });
+// ---------- quotes ----------
+router.get("/quotes", (req, res) => {
+  const cur = db.getSettings().currency;
+  res.json({ data: db.allQuotes().map(q => Object.assign({}, q, { total: fmt(q.total_cents, cur), token: undefined })) });
 });
 
-function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
-
-async function pushOne(slug) {
-  const design = db.getDesign(slug);
-  if (!design) {
-    const err = new Error("not_found");
-    throw err;
-  }
-  try {
-    const fields = await square.pushDesign(design);
-    return db.setSquareFields(slug, Object.assign(
-      { square_sync_error: null, square_sync_error_at: null },
-      fields
-    ));
-  } catch (err) {
-    db.setSquareFields(slug, {
-      square_sync_error: err.message || "square_push_failed",
-      square_sync_error_at: new Date().toISOString()
-    });
-    throw err;
-  }
-}
-
-router.post("/designs/:slug/square-push", async (req, res) => {
-  if (!square.isConfigured()) {
-    return res.status(400).json({ error: "Square isn't configured — set SQUARE_ACCESS_TOKEN and SQUARE_LOCATION_ID." });
-  }
-  try {
-    const saved = await pushOne(req.params.slug);
-    res.json({ ok: true, data: saved });
-  } catch (err) {
-    if (err.message === "not_found") return res.status(404).json({ error: "not_found" });
-    res.status(err.isAuth ? 502 : 500).json({ error: err.message || "square_push_failed" });
-  }
-});
-
-let squarePushInProgress = false;
-
-router.post("/square-push-all", async (req, res) => {
-  if (!square.isConfigured()) {
-    return res.status(400).json({ error: "Square isn't configured — set SQUARE_ACCESS_TOKEN and SQUARE_LOCATION_ID." });
-  }
-  if (squarePushInProgress) {
-    return res.status(409).json({ error: "square_push_already_running" });
-  }
-  const slugs = Array.isArray(req.body && req.body.slugs) && req.body.slugs.length
-    ? req.body.slugs
-    : db.allDesigns().filter(d => d.visible !== false).map(d => d.slug);
-
-  squarePushInProgress = true;
-  const failures = [];
-  let pushed = 0;
-  try {
-    for (const slug of slugs) {
-      try {
-        await pushOne(slug);
-        pushed++;
-      } catch (err) {
-        const design = db.getDesign(slug);
-        failures.push({ slug, title: design ? design.title : slug, error: err.message || "failed" });
-      }
-      await sleep(150); // be polite to Square's rate limits
-    }
-    res.json({ ok: true, pushed, failed: failures.length, failures });
-  } finally {
-    squarePushInProgress = false;
-  }
-});
-
-// ---- error log ----
-router.get("/error-logs", (req, res) => {
-  res.json({ data: db.listErrorLogs() });
-});
-
-router.post("/error-logs/clear", (req, res) => {
-  db.clearErrorLogs();
+router.post("/quotes/:id", (req, res) => {
+  const status = String((req.body || {}).status || "");
+  if (!["new", "contacted", "won", "lost"].includes(status)) return res.status(400).json({ error: "bad status" });
+  const q = db.updateQuote(req.params.id, { status });
+  if (!q) return res.status(404).json({ error: "not_found" });
   res.json({ ok: true });
 });
 
-// ---- quote request log ----
-router.get("/quotes", (req, res) => {
-  res.json({ data: db.listQuoteLogs() });
+router.get("/quotes/:id/pdf", async (req, res) => {
+  const q = db.getQuote(req.params.id);
+  if (!q) return res.status(404).send("Not found");
+  res.setHeader("Content-Type", "application/pdf");
+  res.setHeader("Content-Disposition", `inline; filename="estimate-${q.id}.pdf"`);
+  res.send(await buildQuotePdf(q, db.getSettings()));
 });
 
-function csvEscape(val) {
-  const s = val === null || val === undefined ? "" : String(val);
-  if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
-  return s;
-}
+router.post("/quotes/:id/resend", async (req, res) => {
+  const q = db.getQuote(req.params.id);
+  if (!q) return res.status(404).json({ error: "not_found" });
+  const s = db.getSettings();
+  const email = await mailer.sendQuoteEmails(q, await buildQuotePdf(q, s), s);
+  db.updateQuote(q.id, { email });
+  res.json({ ok: true, email });
+});
 
+function csvCell(v) {
+  const s = v == null ? "" : String(v);
+  // guard against spreadsheet formula injection
+  const safe = /^[=+\-@]/.test(s) ? "'" + s : s;
+  return /[",\n]/.test(safe) ? '"' + safe.replace(/"/g, '""') + '"' : safe;
+}
 router.get("/quotes.csv", (req, res) => {
-  const rows = db.listQuoteLogs();
-  const header = ["Date", "Customer", "Email", "Items", "Estimated cost", "Lead time (days)", "Status", "Notes"];
-  const lines = [header.join(",")];
-  for (const r of rows) {
-    const itemTitles = (r.items || []).map(i => i.title).join("; ");
-    const cost = r.totalCents != null ? "$" + (r.totalCents / 100).toFixed(2) : "";
-    const leadTime = r.leadTimeLow != null ? r.leadTimeLow + "-" + r.leadTimeHigh : "";
-    lines.push([
-      r.createdAt, r.customerName || "", r.customerEmail || "", itemTitles,
-      cost, leadTime, r.status || "", r.notes || ""
-    ].map(csvEscape).join(","));
+  const rows = [["id", "created_at", "status", "source", "name", "email", "phone", "items", "total", "notes", "customer_email", "business_email"]];
+  for (const q of db.allQuotes()) {
+    rows.push([q.id, q.created_at, q.status, q.source, q.customer.name, q.customer.email, q.customer.phone,
+      q.items.map(i => `${i.qty}x ${i.title}`).join("; "), (q.total_cents / 100).toFixed(2), q.customer.notes,
+      q.email && q.email.customer, q.email && q.email.business]);
   }
   res.setHeader("Content-Type", "text/csv");
-  res.setHeader("Content-Disposition", "attachment; filename=quote-requests.csv");
-  res.send(lines.join("\n"));
+  res.setHeader("Content-Disposition", 'attachment; filename="quotes.csv"');
+  res.send(rows.map(r => r.map(csvCell).join(",")).join("\n"));
 });
+
+router.post("/smtp/test", async (req, res) => {
+  try { await mailer.verify(); res.json({ ok: true }); }
+  catch (e) { res.status(502).json({ ok: false, error: e.message }); }
+});
+
+// ---------- Square ----------
+router.get("/square/test", async (req, res) => {
+  try { res.json({ ok: true, locations: await square.testConnection() }); }
+  catch (e) { res.status(502).json({ ok: false, error: e.message }); }
+});
+
+async function pushOne(slug) {
+  const d = db.getDesign(slug);
+  if (!d) throw new Error("not found");
+  const s = db.getSettings();
+  try {
+    const out = await square.pushDesign(d, unitCents(d, s.pricing), {
+      currency: s.currency, overwritePrice: s.squareOverwritePrices
+    });
+    return db.upsertDesign(slug, out);
+  } catch (e) {
+    db.upsertDesign(slug, { square_error: e.message });
+    throw e;
+  }
+}
+
+router.post("/square/push/:slug", async (req, res) => {
+  try { res.json({ ok: true, data: toAdmin(await pushOne(req.params.slug), db.getSettings()) }); }
+  catch (e) { res.status(502).json({ error: e.message }); }
+});
+
+// Bulk push runs in the background so a long run doesn't time out behind a proxy.
+const job = { running: false, total: 0, done: 0, failed: 0, errors: [], startedAt: null, finishedAt: null };
+router.post("/square/push-all", (req, res) => {
+  if (job.running) return res.status(409).json({ error: "A Square push is already running." });
+  const onlyVisible = !(req.body && req.body.includeHidden);
+  const slugs = db.allDesigns().filter(d => !onlyVisible || d.visible !== false).map(d => d.slug);
+  Object.assign(job, { running: true, total: slugs.length, done: 0, failed: 0, errors: [], startedAt: new Date().toISOString(), finishedAt: null });
+  (async () => {
+    for (const slug of slugs) {
+      try { await pushOne(slug); }
+      catch (e) { job.failed++; if (job.errors.length < 50) job.errors.push({ slug, error: e.message }); }
+      job.done++;
+      await new Promise(r => setTimeout(r, 300)); // stay well under Square's rate limit
+    }
+    job.running = false;
+    job.finishedAt = new Date().toISOString();
+  })();
+  res.json({ ok: true, total: slugs.length });
+});
+router.get("/square/status", (req, res) => res.json(job));
 
 module.exports = router;

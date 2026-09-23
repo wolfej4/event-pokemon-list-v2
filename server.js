@@ -1,80 +1,59 @@
 "use strict";
-require("dotenv").config();
-
 const path = require("path");
+const crypto = require("crypto");
 const express = require("express");
 const session = require("express-session");
-
-const publicRoutes = require("./src/routes/public");
-const adminRoutes = require("./src/routes/admin");
 const db = require("./src/db");
 
 const PORT = process.env.PORT || 3000;
-const SESSION_SECRET = process.env.SESSION_SECRET;
+for (const [k, msg] of [
+  ["N3D_API_KEY", "syncing from N3D will fail"],
+  ["ADMIN_PASSWORD", "every admin login will be rejected"],
+  ["SMTP_HOST", "quotes will be saved and downloadable, but not emailed"],
+  ["SQUARE_ACCESS_TOKEN", "Square push is disabled"]
+]) if (!process.env[k]) console.warn(`[startup] ${k} is not set — ${msg}.`);
 
-if (!process.env.N3D_API_KEY) {
-  console.warn("[startup] N3D_API_KEY is not set — syncing the catalog will fail until it is.");
-}
-if (!process.env.ADMIN_PASSWORD) {
-  console.warn("[startup] ADMIN_PASSWORD is not set — the admin panel will reject every login.");
-}
-if (!SESSION_SECRET) {
-  console.warn("[startup] SESSION_SECRET is not set — using an insecure default. Set one in production.");
-}
-if (process.env.COOKIE_SECURE === "true") {
-  console.warn(
-    "[startup] COOKIE_SECURE=true — the admin session cookie will only be " +
-    "set/sent over HTTPS. If you (or a QR code) access /admin over plain " +
-    "HTTP (a raw IP:port, no reverse proxy TLS), login will appear to " +
-    "succeed but every request after it will 401 with not_authenticated, " +
-    "in every browser. Set COOKIE_SECURE=false unless /admin is only ever " +
-    "reached over HTTPS."
-  );
+let secret = process.env.SESSION_SECRET;
+if (!secret) {
+  secret = crypto.randomBytes(32).toString("hex");
+  console.warn("[startup] SESSION_SECRET is not set — using a random one (admin logins reset on restart).");
 }
 
 const app = express();
 app.disable("x-powered-by");
-app.set("trust proxy", 1); // so secure cookies work behind a reverse proxy (nginx/traefik/etc.)
-
-app.use(express.json());
+app.set("trust proxy", 1);
+app.use(express.json({ limit: "200kb" }));
+app.use((req, res, next) => {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("Referrer-Policy", "same-origin");
+  res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  next();
+});
 app.use(session({
-  secret: SESSION_SECRET || "dev-only-insecure-secret-change-me",
+  name: "n3dcat.sid",
+  secret,
   resave: false,
   saveUninitialized: false,
-  cookie: {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.COOKIE_SECURE === "true", // set true once served over https
-    maxAge: 1000 * 60 * 60 * 12 // 12h
-  }
+  cookie: { httpOnly: true, sameSite: "lax", secure: process.env.COOKIE_SECURE === "true", maxAge: 12 * 3600 * 1000 }
 }));
 
-app.use("/api/public", publicRoutes);
-app.use("/api/admin", adminRoutes);
+app.get("/healthz", (req, res) => res.json({ ok: true }));
+app.use("/api/public", require("./src/routes/public"));
+app.use("/api/admin", require("./src/routes/admin"));
+app.use("/api", (req, res) => res.status(404).json({ error: "not_found" }));
 
-// static sites
 app.use("/admin", express.static(path.join(__dirname, "admin")));
 app.use(express.static(path.join(__dirname, "public")));
-
-app.get("/admin*", (req, res) => {
-  res.sendFile(path.join(__dirname, "admin", "index.html"));
-});
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
+app.get(/^\/admin(\/.*)?$/, (req, res) => res.sendFile(path.join(__dirname, "admin", "index.html")));
+app.get("*", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
 
 app.use((err, req, res, next) => {
   console.error("[error]", err);
-  db.addErrorLog({ type: "server", message: err.message || "server_error", path: req.originalUrl });
   res.status(500).json({ error: "server_error" });
 });
 
-const server = app.listen(PORT, () => {
-  console.log(`N3D catalog listening on :${PORT}`);
-});
-
+const server = app.listen(PORT, () => console.log(`N3D catalog listening on :${PORT}`));
 function shutdown() {
-  console.log("Shutting down…");
   db.flushSync();
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(0), 3000).unref();

@@ -1,620 +1,323 @@
 (function(){
   "use strict";
+  var $ = function(id){ return document.getElementById(id); };
+  var designs = [], settings = {}, status = {};
+  function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+  function money(c){ return (c/100).toLocaleString("en-US", { style:"currency", currency: settings.currency || "USD" }); }
 
-  const loginScreen = document.getElementById("login-screen");
-  const dashboard = document.getElementById("dashboard");
-  const pwInput = document.getElementById("pw-input");
-  const loginBtn = document.getElementById("login-btn");
-  const loginError = document.getElementById("login-error");
-  const logoutBtn = document.getElementById("logout-btn");
-  const syncBtn = document.getElementById("sync-btn");
-  const syncStatus = document.getElementById("sync-status");
-  const bizName = document.getElementById("biz-name");
-  const bizEmail = document.getElementById("biz-email");
-  const hoursPerDay = document.getElementById("hours-per-day");
-  const bufferDays = document.getElementById("buffer-days");
-  const saveSettingsBtn = document.getElementById("save-settings-btn");
-  const settingsStatus = document.getElementById("settings-status");
-  const smtpStatusLine = document.getElementById("smtp-status-line");
-  const smtpTestBtn = document.getElementById("smtp-test-btn");
-  const smtpTestStatus = document.getElementById("smtp-test-status");
-  const squareStatusLine = document.getElementById("square-status-line");
-  const squarePushAllBtn = document.getElementById("square-push-all-btn");
-  const squarePushAllStatus = document.getElementById("square-push-all-status");
-  const squareFailuresWrap = document.getElementById("square-failures-wrap");
-  const squareFailuresHeading = document.getElementById("square-failures-heading");
-  const squareFailureRowsEl = document.getElementById("square-failure-rows");
-  const eventModeToggle = document.getElementById("event-mode-toggle");
-  const kioskModeToggle = document.getElementById("kiosk-mode-toggle");
-  const kioskIdleMinutes = document.getElementById("kiosk-idle-minutes");
-  const saveEventSettingsBtn = document.getElementById("save-event-settings-btn");
-  const eventSettingsStatus = document.getElementById("event-settings-status");
-  const quotesEmpty = document.getElementById("quotes-empty");
-  const quotesTable = document.getElementById("quotes-table");
-  const quoteRowsEl = document.getElementById("quote-rows");
-  const rowsEl = document.getElementById("design-rows");
-  const searchEl = document.getElementById("admin-search");
-  const selectAllCheckbox = document.getElementById("select-all-checkbox");
-  const selectedCountEl = document.getElementById("selected-count");
-  const pushSelectedBtn = document.getElementById("push-selected-btn");
-  const qrCodeImg = document.getElementById("qr-code-img");
-  const qrUrlEl = document.getElementById("qr-url");
-  const qrCopyBtn = document.getElementById("qr-copy-btn");
-  const qrPrintBtn = document.getElementById("qr-print-btn");
-  const qrStatus = document.getElementById("qr-status");
-  const errorLogEmpty = document.getElementById("error-log-empty");
-  const errorLogTable = document.getElementById("error-log-table");
-  const errorLogRowsEl = document.getElementById("error-log-rows");
-  const errorLogClearBtn = document.getElementById("error-log-clear-btn");
-
-  let allDesigns = [];
-  const selectedSlugs = new Set();
-
-  function escapeHtml(s){
-    return String(s).replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
-  }
-
-  async function checkSession(){
-    const r = await fetch("/api/admin/session").then(r => r.json());
-    if(r.isAdmin) showDashboard(); else showLogin();
-  }
-
-  // ---- session-expiry handling ----
-  // Sessions are in-memory server-side, so a server restart (redeploy etc.)
-  // invalidates every existing session at once — the dashboard stays open
-  // client-side (nothing told it to log out) until the next API call 401s.
-  // Without this, that shows up as a confusing "Sync failed: not_authenticated"
-  // or a broken QR code image instead of the real explanation.
-  let sessionExpired = false;
-  async function adminFetch(url, opts){
-    const res = await fetch(url, opts);
-    if(res.status === 401 && !sessionExpired){
-      let body = null;
-      try{ body = await res.clone().json(); }catch(e){}
-      if(body && body.error === "not_authenticated"){
-        sessionExpired = true;
-        showLogin();
-        loginError.textContent = "Your session expired — please log in again.";
-      }
-    }
-    return res;
-  }
-
-  function showLogin(){
-    loginScreen.style.display = "flex";
-    dashboard.style.display = "none";
-  }
-  async function showDashboard(){
-    loginScreen.style.display = "none";
-    dashboard.style.display = "block";
-    await loadSquareStatus();
-    await Promise.all([loadSettings(), loadDesigns(), loadSmtpStatus(), loadQuotes(), loadQrCode(), loadErrorLogs()]);
-  }
-
-  // ---- storefront QR code ----
-  async function loadQrCode(){
-    qrCodeImg.src = "/api/admin/qrcode.png?t=" + Date.now(); // bust the cache if the host changes between visits
-    try{
-      const r = await adminFetch("/api/admin/qrcode-url").then(r => r.json());
-      qrUrlEl.textContent = r.url;
-    }catch(err){
-      qrUrlEl.textContent = "";
-    }
-  }
-  qrCopyBtn.addEventListener("click", async () => {
-    try{
-      await navigator.clipboard.writeText(qrUrlEl.textContent);
-      qrStatus.textContent = "Copied";
-      setTimeout(() => qrStatus.textContent = "", 1500);
-    }catch(err){
-      qrStatus.textContent = "Couldn't copy — copy it manually.";
-    }
-  });
-  qrPrintBtn.addEventListener("click", () => window.print());
-
-  loginBtn.addEventListener("click", doLogin);
-  pwInput.addEventListener("keydown", e => { if(e.key === "Enter") doLogin(); });
-
-  async function doLogin(){
-    loginError.textContent = "";
-    loginBtn.disabled = true;
-    try{
-      const res = await fetch("/api/admin/login", {
-        method: "POST", headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ password: pwInput.value })
+  function api(path, opts){
+    opts = opts || {};
+    if (opts.body && typeof opts.body !== "string") { opts.body = JSON.stringify(opts.body); opts.headers = { "Content-Type":"application/json" }; }
+    return fetch("/api/admin" + path, opts).then(function(r){
+      if (r.status === 401 && path !== "/login") { showLogin(); throw new Error("Session expired. Log in again."); }
+      return r.json().catch(function(){ return {}; }).then(function(j){
+        if (!r.ok) throw new Error(j.error || ("Request failed (" + r.status + ")"));
+        return j;
       });
-      if(!res.ok){
-        loginError.textContent = res.status === 429
-          ? "Too many attempts — please wait a bit and try again."
-          : "Wrong password.";
-        loginBtn.disabled = false;
-        return;
-      }
-      pwInput.value = "";
-      sessionExpired = false;
-      await showDashboard();
-    }catch(err){
-      loginError.textContent = "Couldn't reach the server.";
-    }finally{
-      loginBtn.disabled = false;
-    }
-  }
-
-  logoutBtn.addEventListener("click", async () => {
-    await fetch("/api/admin/logout", { method: "POST" });
-    showLogin();
-  });
-
-  // ---- settings ----
-  async function loadSettings(){
-    const s = await adminFetch("/api/admin/settings").then(r => r.json());
-    bizName.value = s.businessName || "";
-    bizEmail.value = s.businessEmail || "";
-    hoursPerDay.value = s.hoursPerDayCapacity != null ? s.hoursPerDayCapacity : 6;
-    bufferDays.value = s.leadTimeBufferDays != null ? s.leadTimeBufferDays : 2;
-    eventModeToggle.checked = !!s.eventModeEnabled;
-    kioskModeToggle.checked = !!s.kioskModeEnabled;
-    kioskIdleMinutes.value = s.kioskIdleMinutes != null ? s.kioskIdleMinutes : 2;
-  }
-  saveSettingsBtn.addEventListener("click", async () => {
-    settingsStatus.textContent = "Saving…";
-    try{
-      const res = await adminFetch("/api/admin/settings", {
-        method: "POST", headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({
-          businessName: bizName.value,
-          businessEmail: bizEmail.value,
-          hoursPerDayCapacity: hoursPerDay.value,
-          leadTimeBufferDays: bufferDays.value
-        })
-      });
-      if(!res.ok) throw new Error();
-      settingsStatus.textContent = "Saved.";
-      setTimeout(() => settingsStatus.textContent = "", 2000);
-    }catch(err){
-      settingsStatus.textContent = "Failed to save — check the lead time fields are valid numbers.";
-    }
-  });
-
-  saveEventSettingsBtn.addEventListener("click", async () => {
-    eventSettingsStatus.textContent = "Saving…";
-    try{
-      const res = await adminFetch("/api/admin/settings", {
-        method: "POST", headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({
-          eventModeEnabled: eventModeToggle.checked,
-          kioskModeEnabled: kioskModeToggle.checked,
-          kioskIdleMinutes: kioskIdleMinutes.value
-        })
-      });
-      if(!res.ok) throw new Error();
-      eventSettingsStatus.textContent = "Saved.";
-      setTimeout(() => eventSettingsStatus.textContent = "", 2000);
-      loadDesigns(); // visible/featured filtering may have changed what matters to show
-    }catch(err){
-      eventSettingsStatus.textContent = "Failed to save — check idle minutes is a valid number.";
-    }
-  });
-
-  // ---- SMTP status ----
-  async function loadSmtpStatus(){
-    try{
-      const r = await adminFetch("/api/admin/smtp-status").then(r => r.json());
-      smtpStatusLine.textContent = r.configured
-        ? "SMTP is configured — customers can receive PDF quotes by email."
-        : "SMTP is not configured — the storefront will fall back to a plain mailto link instead of emailing PDFs. Set SMTP_HOST / SMTP_USER / SMTP_PASS etc. in the environment.";
-    }catch(err){
-      smtpStatusLine.textContent = "Couldn't check SMTP status.";
-    }
-  }
-  smtpTestBtn.addEventListener("click", async () => {
-    smtpTestBtn.disabled = true;
-    smtpTestStatus.textContent = "Testing…";
-    try{
-      const res = await adminFetch("/api/admin/smtp-test", { method: "POST" });
-      const j = await res.json();
-      smtpTestStatus.textContent = res.ok ? "Connected OK." : ("Failed: " + j.error);
-    }catch(err){
-      smtpTestStatus.textContent = "Failed: couldn't reach server.";
-    }finally{
-      smtpTestBtn.disabled = false;
-    }
-  });
-
-  // ---- Square catalog push ----
-  let squareConfigured = false;
-  async function loadSquareStatus(){
-    try{
-      const r = await adminFetch("/api/admin/square-status").then(r => r.json());
-      squareConfigured = !!r.configured;
-      squareStatusLine.textContent = squareConfigured
-        ? "Square is configured — designs can be pushed to your Square catalog."
-        : "Square is not configured — set SQUARE_ACCESS_TOKEN and SQUARE_LOCATION_ID in the environment to enable this.";
-      squarePushAllBtn.disabled = !squareConfigured;
-    }catch(err){
-      squareStatusLine.textContent = "Couldn't check Square status.";
-    }
-  }
-  squarePushAllBtn.addEventListener("click", async () => {
-    squarePushAllBtn.disabled = true;
-    squarePushAllStatus.textContent = "Pushing to Square — this can take a moment…";
-    try{
-      const res = await adminFetch("/api/admin/square-push-all", {
-        method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({})
-      });
-      const j = await res.json();
-      if(!res.ok) throw new Error(j.error || "push failed");
-      squarePushAllStatus.textContent = "Done — " + j.pushed + " pushed" + (j.failed ? ", " + j.failed + " failed" : "") + ".";
-      await loadDesigns();
-    }catch(err){
-      squarePushAllStatus.textContent = "Failed: " + err.message;
-    }finally{
-      squarePushAllBtn.disabled = !squareConfigured;
-    }
-  });
-
-  // ---- designs ----
-  async function loadDesigns(){
-    const r = await adminFetch("/api/admin/designs").then(r => r.json());
-    allDesigns = r.data || [];
-    renderRows();
-    renderSquareFailures();
-  }
-
-  function renderSquareFailures(){
-    const failed = allDesigns.filter(d => d.square_sync_error);
-    if(!failed.length){
-      squareFailuresWrap.style.display = "none";
-      return;
-    }
-    failed.sort((a, b) => (b.square_sync_error_at || "").localeCompare(a.square_sync_error_at || ""));
-    squareFailuresWrap.style.display = "block";
-    squareFailuresHeading.textContent = failed.length + " design" + (failed.length === 1 ? "" : "s") + " failed to sync to Square:";
-    squareFailureRowsEl.innerHTML = "";
-    const frag = document.createDocumentFragment();
-    for(const d of failed) frag.appendChild(buildSquareFailureRow(d));
-    squareFailureRowsEl.appendChild(frag);
-  }
-
-  function buildSquareFailureRow(d){
-    const tr = document.createElement("tr");
-    const when = d.square_sync_error_at ? new Date(d.square_sync_error_at) : null;
-    const whenStr = when && !isNaN(when) ? when.toLocaleString([], { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" }) : "—";
-
-    const tdTitle = document.createElement("td");
-    tdTitle.textContent = d.title;
-    tr.appendChild(tdTitle);
-
-    const tdErr = document.createElement("td");
-    tdErr.style.color = "var(--red)";
-    tdErr.textContent = d.square_sync_error;
-    tr.appendChild(tdErr);
-
-    const tdWhen = document.createElement("td");
-    tdWhen.textContent = whenStr;
-    tr.appendChild(tdWhen);
-
-    const tdRetry = document.createElement("td");
-    const retryBtn = document.createElement("button");
-    retryBtn.className = "btn small";
-    retryBtn.textContent = "Retry";
-    retryBtn.disabled = !squareConfigured;
-    retryBtn.addEventListener("click", async () => {
-      retryBtn.disabled = true;
-      retryBtn.textContent = "Retrying…";
-      try{
-        const res = await adminFetch("/api/admin/designs/" + encodeURIComponent(d.slug) + "/square-push", { method: "POST" });
-        const j = await res.json();
-        if(!res.ok) throw new Error(j.error || "push failed");
-        await loadDesigns();
-      }catch(err){
-        retryBtn.disabled = !squareConfigured;
-        retryBtn.textContent = "Retry";
-        await loadDesigns(); // refresh so the (still-failing) error message / timestamp is current
-      }
     });
-    tdRetry.appendChild(retryBtn);
-    tr.appendChild(tdRetry);
+  }
+  function setStatus(el, msg, kind){ el.textContent = msg; el.className = el.className.replace(/\b(ok|bad)\b/g, "").trim() + (kind ? " " + kind : ""); }
 
-    return tr;
+  // ---------- auth ----------
+  function showLogin(){ $("app").hidden = true; $("login").hidden = false; $("pw").focus(); }
+  function showApp(){ $("login").hidden = true; $("app").hidden = false; boot(); }
+  $("login-form").addEventListener("submit", function(e){
+    e.preventDefault(); $("login-err").textContent = "";
+    api("/login", { method:"POST", body:{ password: $("pw").value } })
+      .then(function(){ $("pw").value = ""; showApp(); })
+      .catch(function(err){ $("login-err").textContent = err.message; });
+  });
+  $("logout").addEventListener("click", function(){ api("/logout", { method:"POST" }).finally(showLogin); });
+  fetch("/api/admin/session").then(function(r){ return r.json(); }).then(function(s){ s.isAdmin ? showApp() : showLogin(); });
+
+  // ---------- tabs ----------
+  document.querySelector(".tabs").addEventListener("click", function(e){
+    var b = e.target.closest("[data-tab]"); if (!b) return;
+    [].forEach.call(this.children, function(x){ x.classList.toggle("active", x === b); });
+    [].forEach.call(document.querySelectorAll("[data-panel]"), function(p){ p.hidden = p.dataset.panel !== b.dataset.tab; });
+    if (b.dataset.tab === "quotes") loadQuotes();
+    if (b.dataset.tab === "square") checkSquareJob();
+  });
+
+  function boot(){
+    Promise.all([api("/settings"), api("/status")]).then(function(r){
+      settings = r[0]; status = r[1];
+      fillSettings(); fillPricing(); renderConn(); renderLogos();
+      if (settings.businessName) $("bar-title").textContent = settings.businessName + " admin";
+      return loadDesigns();
+    }).catch(function(e){ setStatus($("sync-status"), e.message, "bad"); });
   }
 
-  searchEl.addEventListener("input", renderRows);
+  // ---------- designs ----------
+  function loadDesigns(){
+    return api("/designs").then(function(r){ designs = r.data || []; renderRows(); renderPreview(); });
+  }
+  $("d-search").addEventListener("input", renderRows);
+  $("d-filter").addEventListener("change", renderRows);
 
-  let currentList = [];
+  function squareCell(d){
+    if (d.square_error) return '<span class="pill bad" title="' + esc(d.square_error) + '">Error</span>';
+    if (d.square_item_id) return '<span class="pill ok" title="Last pushed ' + esc(new Date(d.square_pushed_at).toLocaleString()) + '">In Square</span>';
+    return '<span class="pill">Not pushed</span>';
+  }
 
   function renderRows(){
-    const q = searchEl.value.trim().toLowerCase();
-    currentList = q ? allDesigns.filter(d => (d.title||"").toLowerCase().includes(q) || d.slug.includes(q)) : allDesigns;
-    // drop selections for designs no longer in view (deleted/renamed) — keeps the set tidy
-    for(const slug of Array.from(selectedSlugs)){
-      if(!allDesigns.some(d => d.slug === slug)) selectedSlugs.delete(slug);
-    }
-    rowsEl.innerHTML = "";
-    const frag = document.createDocumentFragment();
-    for(const d of currentList) frag.appendChild(buildRow(d));
-    rowsEl.appendChild(frag);
-    updateSelectionUi();
+    var q = $("d-search").value.trim().toLowerCase(), f = $("d-filter").value;
+    var list = designs.filter(function(d){
+      if (q && ((d.title || "") + " " + d.slug).toLowerCase().indexOf(q) === -1) return false;
+      if (f === "visible") return d.visible !== false;
+      if (f === "hidden") return d.visible === false;
+      if (f === "override") return d.price_cents != null;
+      if (f === "unpushed") return !d.square_item_id;
+      return true;
+    });
+    var vis = designs.filter(function(d){ return d.visible !== false; }).length;
+    $("design-summary").textContent = designs.length ? (designs.length + " designs, " + vis + " visible on the store" +
+      (settings.lastCursor ? ". Last N3D change: " + new Date(settings.lastCursor).toLocaleDateString() : "")) :
+      "No designs yet. Sync from N3D to pull in your catalog.";
+    $("rows").innerHTML = list.map(function(d){
+      return '<tr data-slug="' + esc(d.slug) + '"' + (d.visible === false ? ' class="off"' : '') + '>' +
+        '<td><img class="th" loading="lazy" alt="" src="' + esc(d.image_url || "") + '"></td>' +
+        '<td><div class="dt">' + esc(d.title) + '</div><div class="dm">' + esc(d.category || "") +
+          (d.total_weight_grams ? ", " + Math.round(d.total_weight_grams) + " g" : "") + (d.print_time ? ", " + esc(d.print_time) : "") + '</div></td>' +
+        '<td class="muted">' + money(d.formula_cents) + '</td>' +
+        '<td><input class="input price-in" type="number" min="0" step="0.01" placeholder="Formula" aria-label="Custom price" value="' +
+          (d.price_cents != null ? (d.price_cents/100).toFixed(2) : "") + '"></td>' +
+        '<td><input class="input url-in" type="url" placeholder="https://" aria-label="Shop link" value="' + esc(d.shop_url || "") + '"></td>' +
+        '<td><input type="checkbox" class="vis" aria-label="Visible on store"' + (d.visible !== false ? " checked" : "") + '></td>' +
+        '<td>' + squareCell(d) + '</td>' +
+        '<td><div class="cell-actions"><button class="btn small" data-save type="button">Save</button>' +
+          '<button class="btn ghost small" data-push type="button"' + (status.square ? "" : " disabled title=\"SQUARE_ACCESS_TOKEN not set\"") + '>Push</button>' +
+          '<span class="saved"></span></div></td></tr>';
+    }).join("");
   }
 
-  function updateSelectionUi(){
-    selectedCountEl.textContent = selectedSlugs.size + " selected";
-    pushSelectedBtn.disabled = selectedSlugs.size === 0 || !squareConfigured;
-    const visibleSelected = currentList.filter(d => selectedSlugs.has(d.slug)).length;
-    selectAllCheckbox.checked = currentList.length > 0 && visibleSelected === currentList.length;
-    selectAllCheckbox.indeterminate = visibleSelected > 0 && visibleSelected < currentList.length;
+  function replaceDesign(d){
+    for (var i = 0; i < designs.length; i++) if (designs[i].slug === d.slug) designs[i] = d;
   }
 
-  selectAllCheckbox.addEventListener("change", () => {
-    for(const d of currentList){
-      if(selectAllCheckbox.checked) selectedSlugs.add(d.slug);
-      else selectedSlugs.delete(d.slug);
-    }
-    renderRows();
-  });
-
-  pushSelectedBtn.addEventListener("click", async () => {
-    const slugs = Array.from(selectedSlugs);
-    if(!slugs.length) return;
-    pushSelectedBtn.disabled = true;
-    selectedCountEl.textContent = "Pushing " + slugs.length + " to Square…";
-    try{
-      const res = await adminFetch("/api/admin/square-push-all", {
-        method: "POST", headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ slugs })
-      });
-      const j = await res.json();
-      if(!res.ok) throw new Error(j.error || "push failed");
-      selectedSlugs.clear();
-      await loadDesigns();
-      selectedCountEl.textContent = "Done — " + j.pushed + " pushed" + (j.failed ? ", " + j.failed + " failed" : "") + ".";
-      setTimeout(updateSelectionUi, 3000);
-    }catch(err){
-      selectedCountEl.textContent = "Failed: " + err.message;
-    }finally{
-      pushSelectedBtn.disabled = selectedSlugs.size === 0 || !squareConfigured;
-    }
-  });
-
-  function setSquareRowStatus(el, d){
-    const failedAfterSync = d.square_sync_error &&
-      (!d.square_synced_at || (d.square_sync_error_at || "") > d.square_synced_at);
-    if(failedAfterSync){
-      el.textContent = "Failed: " + d.square_sync_error;
-      el.style.color = "var(--red)";
+  $("rows").addEventListener("click", function(e){
+    var btn = e.target.closest("[data-save],[data-push]"); if (!btn) return;
+    var tr = btn.closest("tr"), slug = tr.dataset.slug, note = tr.querySelector(".saved");
+    btn.disabled = true; note.style.color = ""; note.textContent = "";
+    var p;
+    if (btn.hasAttribute("data-save")) {
+      p = api("/designs/" + encodeURIComponent(slug), { method:"POST", body:{
+        price: tr.querySelector(".price-in").value,
+        shop_url: tr.querySelector(".url-in").value,
+        visible: tr.querySelector(".vis").checked
+      }}).then(function(r){ replaceDesign(r.data); tr.classList.toggle("off", r.data.visible === false); note.textContent = "Saved"; });
     } else {
-      el.textContent = d.square_synced_at ? "Synced" : "";
-      el.style.color = "";
+      note.textContent = "Pushing…";
+      p = api("/square/push/" + encodeURIComponent(slug), { method:"POST" })
+        .then(function(r){ replaceDesign(r.data); tr.children[6].innerHTML = squareCell(r.data); note.textContent = "Pushed"; });
     }
-  }
-
-  function buildRow(d){
-    const tr = document.createElement("tr");
-    if(d.visible === false) tr.classList.add("hidden-row");
-
-    const tdCheck = document.createElement("td");
-    const checkbox = document.createElement("input");
-    checkbox.type = "checkbox";
-    checkbox.checked = selectedSlugs.has(d.slug);
-    checkbox.addEventListener("change", () => {
-      if(checkbox.checked) selectedSlugs.add(d.slug);
-      else selectedSlugs.delete(d.slug);
-      updateSelectionUi();
-    });
-    tdCheck.appendChild(checkbox);
-    tr.appendChild(tdCheck);
-
-    const tdThumb = document.createElement("td");
-    const img = document.createElement("img");
-    img.className = "thumb"; img.src = d.image_url || ""; img.loading = "lazy";
-    tdThumb.appendChild(img);
-    tr.appendChild(tdThumb);
-
-    const tdTitle = document.createElement("td");
-    tdTitle.innerHTML = '<div class="t">' + escapeHtml(d.title) +
-      '</div><div style="color:var(--text-faint);font-size:0.72rem;">' +
-      escapeHtml(d.category || "") + (d.round != null ? " · round " + escapeHtml(String(d.round)) : "") +
-      (d.purchase_only ? " · extra" : "") + '</div>';
-    tr.appendChild(tdTitle);
-
-    const tdPrice = document.createElement("td");
-    const priceInput = document.createElement("input");
-    priceInput.type = "number"; priceInput.min = "0"; priceInput.step = "0.01"; priceInput.className = "price";
-    priceInput.placeholder = "—";
-    priceInput.value = d.price_cents != null ? (d.price_cents / 100).toFixed(2) : "";
-    tdPrice.appendChild(priceInput);
-    tr.appendChild(tdPrice);
-
-    const tdUrl = document.createElement("td");
-    const urlInput = document.createElement("input");
-    urlInput.type = "text"; urlInput.placeholder = "https://yourshop.com/…";
-    urlInput.value = d.shop_url || "";
-    tdUrl.appendChild(urlInput);
-    tr.appendChild(tdUrl);
-
-    const tdVisible = document.createElement("td");
-    const visCheck = document.createElement("input");
-    visCheck.type = "checkbox"; visCheck.checked = d.visible !== false;
-    tdVisible.appendChild(visCheck);
-    tr.appendChild(tdVisible);
-
-    const tdFeatured = document.createElement("td");
-    const featCheck = document.createElement("input");
-    featCheck.type = "checkbox"; featCheck.checked = !!d.featured;
-    tdFeatured.appendChild(featCheck);
-    tr.appendChild(tdFeatured);
-
-    const tdSquare = document.createElement("td");
-    const squareBtn = document.createElement("button");
-    squareBtn.className = "btn small";
-    squareBtn.textContent = d.square_item_id ? "Update" : "Push";
-    squareBtn.disabled = !squareConfigured;
-    const squareStatus = document.createElement("div");
-    squareStatus.className = "row-status";
-    squareStatus.style.display = "block";
-    setSquareRowStatus(squareStatus, d);
-    squareBtn.addEventListener("click", async () => {
-      squareBtn.disabled = true;
-      squareStatus.textContent = "Pushing…";
-      squareStatus.style.color = "";
-      try{
-        const res = await adminFetch("/api/admin/designs/" + encodeURIComponent(d.slug) + "/square-push", { method: "POST" });
-        const j = await res.json();
-        if(!res.ok) throw new Error(j.error || "push failed");
-        Object.assign(d, j.data);
-        d.square_sync_error = null;
-        squareBtn.textContent = "Update";
-        setSquareRowStatus(squareStatus, d);
-        renderSquareFailures();
-      }catch(err){
-        d.square_sync_error = err.message;
-        d.square_sync_error_at = new Date().toISOString();
-        setSquareRowStatus(squareStatus, d);
-        renderSquareFailures();
-      }finally{
-        squareBtn.disabled = !squareConfigured;
-      }
-    });
-    tdSquare.appendChild(squareBtn);
-    tdSquare.appendChild(squareStatus);
-    tr.appendChild(tdSquare);
-
-    const tdSave = document.createElement("td");
-    const saveBtn = document.createElement("button");
-    saveBtn.className = "btn small row-save"; saveBtn.textContent = "Save";
-    const status = document.createElement("span");
-    status.className = "row-status";
-    saveBtn.addEventListener("click", async () => {
-      saveBtn.disabled = true;
-      status.textContent = "Saving…";
-      try{
-        const res = await adminFetch("/api/admin/designs/" + encodeURIComponent(d.slug), {
-          method: "POST", headers: {"Content-Type":"application/json"},
-          body: JSON.stringify({
-            price: priceInput.value === "" ? "" : priceInput.value,
-            shop_url: urlInput.value.trim(),
-            visible: visCheck.checked,
-            featured: featCheck.checked
-          })
-        });
-        if(!res.ok) throw new Error();
-        const saved = (await res.json()).data;
-        Object.assign(d, saved);
-        tr.classList.toggle("hidden-row", d.visible === false);
-        status.textContent = "Saved";
-        setTimeout(() => status.textContent = "", 1500);
-      }catch(err){
-        status.textContent = "Failed";
-      }finally{
-        saveBtn.disabled = false;
-      }
-    });
-    tdSave.appendChild(saveBtn);
-    tdSave.appendChild(status);
-    tr.appendChild(tdSave);
-
-    return tr;
-  }
-
-  // ---- quote request log ----
-  async function loadQuotes(){
-    try{
-      const r = await adminFetch("/api/admin/quotes").then(r => r.json());
-      const rows = r.data || [];
-      quotesEmpty.style.display = rows.length ? "none" : "block";
-      quotesTable.style.display = rows.length ? "table" : "none";
-      quoteRowsEl.innerHTML = "";
-      const frag = document.createDocumentFragment();
-      for(const q of rows) frag.appendChild(buildQuoteRow(q));
-      quoteRowsEl.appendChild(frag);
-    }catch(err){
-      quotesEmpty.style.display = "block";
-      quotesEmpty.textContent = "Couldn't load quote requests.";
-    }
-  }
-
-  function buildQuoteRow(q){
-    const tr = document.createElement("tr");
-    const date = new Date(q.createdAt);
-    const dateStr = isNaN(date) ? q.createdAt : date.toLocaleString([], { month:"short", day:"numeric", hour:"numeric", minute:"2-digit" });
-    const itemTitles = (q.items || []).map(i => i.title).join(", ");
-    const cost = q.totalCents != null ? "$" + (q.totalCents/100).toFixed(2) : "—";
-    const lead = q.leadTimeLow != null ? q.leadTimeLow + "–" + q.leadTimeHigh + "d" : "—";
-    const statusColor = q.status === "sent" ? "var(--teal)" : "var(--red)";
-
-    tr.innerHTML =
-      '<td>' + escapeHtml(dateStr) + '</td>' +
-      '<td>' + escapeHtml(q.customerName || "—") + '<div style="color:var(--text-faint);font-size:0.72rem;">' + escapeHtml(q.customerEmail || "") + '</div></td>' +
-      '<td style="max-width:220px;">' + escapeHtml(itemTitles) + '</td>' +
-      '<td>' + escapeHtml(cost) + '</td>' +
-      '<td>' + escapeHtml(lead) + '</td>' +
-      '<td style="color:' + statusColor + ';">' + escapeHtml(q.status || "") + '</td>';
-    return tr;
-  }
-
-  // ---- error log ----
-  async function loadErrorLogs(){
-    try{
-      const r = await adminFetch("/api/admin/error-logs").then(r => r.json());
-      const rows = r.data || [];
-      errorLogEmpty.style.display = rows.length ? "none" : "block";
-      errorLogTable.style.display = rows.length ? "table" : "none";
-      errorLogRowsEl.innerHTML = "";
-      const frag = document.createDocumentFragment();
-      for(const e of rows) frag.appendChild(buildErrorLogRow(e));
-      errorLogRowsEl.appendChild(frag);
-    }catch(err){
-      errorLogEmpty.style.display = "block";
-      errorLogEmpty.textContent = "Couldn't load the error log.";
-    }
-  }
-
-  function buildErrorLogRow(e){
-    const tr = document.createElement("tr");
-    const date = new Date(e.createdAt);
-    const dateStr = isNaN(date) ? e.createdAt : date.toLocaleString([], { month:"short", day:"numeric", hour:"numeric", minute:"2-digit", second:"2-digit" });
-    const message = e.detail ? e.message + " — " + e.detail : e.message;
-    tr.innerHTML =
-      '<td>' + escapeHtml(dateStr) + '</td>' +
-      '<td><span style="font-family:var(--mono);font-size:0.72rem;color:var(--text-faint);">' + escapeHtml(e.type || "") + '</span></td>' +
-      '<td style="color:var(--red);">' + escapeHtml(message || "") + '</td>' +
-      '<td style="color:var(--text-faint);font-size:0.76rem;">' + escapeHtml(e.path || "") + '</td>';
-    return tr;
-  }
-
-  errorLogClearBtn.addEventListener("click", async () => {
-    errorLogClearBtn.disabled = true;
-    try{
-      await adminFetch("/api/admin/error-logs/clear", { method: "POST" });
-      await loadErrorLogs();
-    }finally{
-      errorLogClearBtn.disabled = false;
-    }
+    p.catch(function(err){ note.style.color = "var(--bad)"; note.textContent = err.message; if (btn.hasAttribute("data-push")) loadDesigns(); })
+     .finally(function(){ btn.disabled = false; setTimeout(function(){ if (note.textContent === "Saved" || note.textContent === "Pushed") note.textContent = ""; }, 2000); });
   });
 
-  // ---- sync ----
-  syncBtn.addEventListener("click", async () => {
-    syncBtn.disabled = true;
-    syncStatus.textContent = "Syncing from N3D — this can take a moment…";
-    try{
-      const res = await adminFetch("/api/admin/sync", {
-        method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ full: false })
-      });
-      const j = await res.json();
-      if(!res.ok) throw new Error(j.error || "sync failed");
-      syncStatus.textContent = "Done — " + j.added + " new, " + j.updated + " updated" +
-        (j.spritesFilled ? ", " + j.spritesFilled + " sprite" + (j.spritesFilled === 1 ? "" : "s") + " filled in" : "") + ".";
-      await loadDesigns();
-    }catch(err){
-      syncStatus.textContent = "Sync failed: " + err.message;
-    }finally{
-      syncBtn.disabled = false;
-    }
+  function runSync(full){
+    var el = $("sync-status");
+    $("sync").disabled = $("full-sync").disabled = true;
+    setStatus(el, full ? "Pulling the full catalog from N3D…" : "Checking N3D for new and changed designs…");
+    api("/sync", { method:"POST", body:{ full: full } })
+      .then(function(r){ setStatus(el, "Sync finished: " + r.added + " new, " + r.updated + " updated.", "ok"); return api("/settings"); })
+      .then(function(s){ settings = s; return loadDesigns(); })
+      .catch(function(e){ setStatus(el, "Sync failed: " + e.message, "bad"); })
+      .finally(function(){ $("sync").disabled = $("full-sync").disabled = false; });
+  }
+  $("sync").addEventListener("click", function(){ runSync(false); });
+  $("full-sync").addEventListener("click", function(){ runSync(true); });
+
+  // ---------- pricing ----------
+  var PK = ["baseFee","perGram","perHour","markupPct","minPrice","roundTo"];
+  function fillPricing(){ PK.forEach(function(k){ $("p-" + k).value = settings.pricing[k]; }); }
+  function formPricing(){ var p = {}; PK.forEach(function(k){ p[k] = Number($("p-" + k).value) || 0; }); return p; }
+  function hours(t){
+    if (!t) return 0; if (typeof t === "number") return t / 3600;
+    var m = String(t).match(/^(\d+):(\d{1,2})(?::(\d{1,2}))?$/);
+    if (m) return +m[1] + m[2]/60 + (m[3] || 0)/3600;
+    var h = 0, x;
+    if ((x = /(\d+(?:\.\d+)?)\s*d/i.exec(t))) h += x[1]*24;
+    if ((x = /(\d+(?:\.\d+)?)\s*h/i.exec(t))) h += +x[1];
+    if ((x = /(\d+(?:\.\d+)?)\s*m/i.exec(t))) h += x[1]/60;
+    return h;
+  }
+  function formula(d, p){ // mirrors src/pricing.js so the preview updates as you type
+    var v = p.baseFee + (d.total_weight_grams || 0) * p.perGram + hours(d.print_time) * p.perHour;
+    v *= 1 + p.markupPct/100; v = Math.max(v, p.minPrice);
+    if (p.roundTo > 0) v = Math.ceil(v / p.roundTo - 1e-9) * p.roundTo;
+    return Math.round(v * 100);
+  }
+  function renderPreview(){
+    var p = formPricing();
+    var sample = designs.filter(function(d){ return d.total_weight_grams; })
+      .sort(function(a,b){ return a.total_weight_grams - b.total_weight_grams; });
+    if (sample.length > 6) { var step = (sample.length - 1) / 5, pick = []; for (var i = 0; i < 6; i++) pick.push(sample[Math.round(i*step)]); sample = pick; }
+    $("pricing-preview").innerHTML = sample.length ? sample.map(function(d){
+      return '<div class="preview-row"><span>' + esc(d.title) + ' <span class="muted">(' + Math.round(d.total_weight_grams) + ' g, ' + esc(d.print_time || "?") + ')</span></span><strong>' + money(formula(d, p)) + '</strong></div>';
+    }).join("") : '<p class="muted">Sync designs from N3D to see a preview.</p>';
+  }
+  $("pricing-form").addEventListener("input", renderPreview);
+  $("pricing-form").addEventListener("submit", function(e){
+    e.preventDefault();
+    api("/settings", { method:"POST", body:{ pricing: formPricing() } })
+      .then(function(s){ settings = s; setStatus($("pricing-status"), "Saved. Store prices updated.", "ok"); return loadDesigns(); })
+      .catch(function(err){ setStatus($("pricing-status"), err.message, "bad"); });
   });
 
-  if("serviceWorker" in navigator){
-    navigator.serviceWorker.register("/admin/sw.js").catch(() => {});
+  // ---------- settings ----------
+  var SK = ["businessName","tagline","businessEmail","businessPhone","currency","kioskIdleSeconds","quoteFooter"];
+  function fillSettings(){
+    SK.forEach(function(k){ $("s-" + k).value = settings[k] == null ? "" : settings[k]; });
+    $("sq-overwrite").checked = settings.squareOverwritePrices !== false;
   }
+  $("settings-form").addEventListener("submit", function(e){
+    e.preventDefault();
+    var body = {}; SK.forEach(function(k){ body[k] = $("s-" + k).value; });
+    body.currency = body.currency.toUpperCase();
+    api("/settings", { method:"POST", body: body })
+      .then(function(s){ settings = s; fillSettings(); setStatus($("settings-status"), "Saved.", "ok"); })
+      .catch(function(err){ setStatus($("settings-status"), err.message, "bad"); });
+  });
+  function renderConn(){
+    var rows = [["N3D API key", status.n3dKey], ["Email (SMTP)", status.smtp], ["Square (" + status.squareEnv + ")", status.square]];
+    $("conn-list").innerHTML = rows.map(function(r){
+      return '<li><span>' + esc(r[0]) + '</span>' + (r[1] ? '<span class="pill ok">Set</span>' : '<span class="pill warn">Not set</span>') + '</li>';
+    }).join("");
+    $("sq-conn").textContent = status.square ? "Access token is set (" + status.squareEnv + ")." : "SQUARE_ACCESS_TOKEN isn't set. Add it to the stack's environment variables and redeploy.";
+    $("sq-push-all").disabled = $("sq-test").disabled = !status.square;
+  }
+  $("n3d-test").addEventListener("click", function(){
+    setStatus($("conn-status"), "Checking N3D key…");
+    api("/n3d/check").then(function(){ setStatus($("conn-status"), "N3D key works.", "ok"); })
+      .catch(function(e){ setStatus($("conn-status"), e.message, "bad"); });
+  });
+  $("smtp-test").addEventListener("click", function(){
+    setStatus($("conn-status"), "Connecting to the mail server…");
+    api("/smtp/test", { method:"POST" }).then(function(){ setStatus($("conn-status"), "Mail server accepted the login.", "ok"); })
+      .catch(function(e){ setStatus($("conn-status"), e.message, "bad"); });
+  });
 
-  checkSession();
+  // ---------- logo ----------
+  function renderLogos(){
+    var logos = settings.logos || {};
+    [].forEach.call(document.querySelectorAll(".logo-slot"), function(slot){
+      var v = slot.dataset.variant, meta = logos[v], img = slot.querySelector("img"), empty = slot.querySelector(".muted");
+      var fallback = v === "dark" && !meta && logos.light ? logos.light : null;
+      var use = meta || fallback;
+      img.hidden = !use; empty.hidden = !!use;
+      if (use) img.src = "/api/public/logo/" + (meta ? v : "light") + "?v=" + use.v;
+      slot.querySelector("[data-remove]").hidden = !meta;
+    });
+    var bar = $("bar-logo"), main = logos.light || logos.dark;
+    bar.hidden = !main;
+    if (main) {
+      var dark = document.documentElement.dataset.theme === "dark";
+      var v = dark && logos.dark ? "dark" : (logos.light ? "light" : "dark");
+      bar.src = "/api/public/logo/" + v + "?v=" + logos[v].v;
+    }
+    $("logo-show-name").checked = settings.logoShowName !== false;
+  }
+  // swap the admin bar logo when the theme toggles
+  new MutationObserver(function(){ if (settings.logos) renderLogos(); })
+    .observe(document.documentElement, { attributes:true, attributeFilter:["data-theme"] });
+
+  document.querySelector(".logo-grid").addEventListener("change", function(e){
+    if (e.target.type !== "file" || !e.target.files[0]) return;
+    var file = e.target.files[0], v = e.target.closest(".logo-slot").dataset.variant;
+    e.target.value = "";
+    if (file.size > 2 * 1024 * 1024) return setStatus($("logo-status"), "That file is over 2 MB. Export a smaller version and try again.", "bad");
+    setStatus($("logo-status"), "Uploading…");
+    fetch("/api/admin/logo/" + v, { method:"POST", headers:{ "Content-Type": file.type || "application/octet-stream" }, body:file })
+      .then(function(r){ return r.json().then(function(j){ if (!r.ok) throw new Error(j.error || "Upload failed."); return j; }); })
+      .then(function(j){
+        settings.logos = j.logos; renderLogos();
+        var pdfOk = (j.logos.light && /png|jpg/.test(j.logos.light.ext)) || (j.logos.dark && /png|jpg/.test(j.logos.dark.ext));
+        setStatus($("logo-status"), "Logo saved." + (pdfOk ? "" : " Upload a PNG or JPG version too if you want it on quote PDFs."), "ok");
+      })
+      .catch(function(err){ setStatus($("logo-status"), err.message, "bad"); });
+  });
+  document.querySelector(".logo-grid").addEventListener("click", function(e){
+    var b = e.target.closest("[data-remove]"); if (!b) return;
+    var v = b.closest(".logo-slot").dataset.variant;
+    api("/logo/" + v, { method:"DELETE" })
+      .then(function(j){ settings.logos = j.logos; renderLogos(); setStatus($("logo-status"), "Logo removed.", "ok"); })
+      .catch(function(err){ setStatus($("logo-status"), err.message, "bad"); });
+  });
+  $("logo-show-name").addEventListener("change", function(){
+    api("/settings", { method:"POST", body:{ logoShowName: this.checked } })
+      .then(function(s){ settings = s; setStatus($("logo-status"), "Saved.", "ok"); });
+  });
+
+  // ---------- quotes ----------
+  function loadQuotes(){
+    api("/quotes").then(function(r){
+      var list = r.data || [];
+      $("quote-summary").textContent = list.length ? list.length + " requests, " + list.filter(function(q){ return q.status === "new"; }).length + " new" : "No quote requests yet.";
+      $("quote-rows").innerHTML = list.map(function(q){
+        var em = q.email || {};
+        var emailPill = em.customer === "sent" ? '<span class="pill ok">Sent</span>' :
+          '<span class="pill ' + (String(em.customer).indexOf("failed") === 0 ? "bad" : "warn") + '" title="' + esc(em.customer || "") + '">' + (String(em.customer).indexOf("failed") === 0 ? "Failed" : "Not sent") + '</span>';
+        return '<tr data-id="' + esc(q.id) + '"><td><strong>' + esc(q.id) + '</strong><div class="dm">' + esc(new Date(q.created_at).toLocaleString()) + (q.source === "kiosk" ? ", kiosk" : "") + '</div></td>' +
+          '<td>' + esc(q.customer.name) + '<div class="dm"><a href="mailto:' + esc(q.customer.email) + '">' + esc(q.customer.email) + '</a>' + (q.customer.phone ? ", " + esc(q.customer.phone) : "") + '</div>' +
+            (q.customer.notes ? '<div class="dm" title="' + esc(q.customer.notes) + '">“' + esc(q.customer.notes.slice(0, 60)) + (q.customer.notes.length > 60 ? "…" : "") + '”</div>' : "") + '</td>' +
+          '<td class="dm" style="max-width:260px">' + q.items.map(function(i){ return esc(i.qty + "× " + i.title); }).join("<br>") + '</td>' +
+          '<td><strong>' + esc(q.total) + '</strong></td><td>' + emailPill + '</td>' +
+          '<td><select class="input q-status" aria-label="Status">' + ["new","contacted","won","lost"].map(function(s){
+            return '<option' + (s === q.status ? " selected" : "") + '>' + s + '</option>'; }).join("") + '</select></td>' +
+          '<td><div class="cell-actions"><a class="btn small" target="_blank" rel="noopener" href="/api/admin/quotes/' + encodeURIComponent(q.id) + '/pdf">PDF</a>' +
+          '<button class="btn ghost small" data-resend type="button">Resend</button><span class="saved"></span></div></td></tr>';
+      }).join("");
+    }).catch(function(e){ $("quote-summary").textContent = e.message; });
+  }
+  $("quote-rows").addEventListener("change", function(e){
+    if (!e.target.classList.contains("q-status")) return;
+    var id = e.target.closest("tr").dataset.id;
+    api("/quotes/" + encodeURIComponent(id), { method:"POST", body:{ status: e.target.value } });
+  });
+  $("quote-rows").addEventListener("click", function(e){
+    var b = e.target.closest("[data-resend]"); if (!b) return;
+    var tr = b.closest("tr"), note = tr.querySelector(".saved");
+    b.disabled = true; note.textContent = "Sending…";
+    api("/quotes/" + encodeURIComponent(tr.dataset.id) + "/resend", { method:"POST" })
+      .then(function(r){ note.textContent = r.email.customer === "sent" ? "Sent" : r.email.customer; setTimeout(loadQuotes, 1500); })
+      .catch(function(err){ note.textContent = err.message; })
+      .finally(function(){ b.disabled = false; });
+  });
+
+  // ---------- square ----------
+  $("sq-test").addEventListener("click", function(){
+    setStatus($("sq-locations"), "Connecting to Square…");
+    api("/square/test").then(function(r){
+      setStatus($("sq-locations"), "Connected. Locations: " + (r.locations.map(function(l){ return l.name + " (" + l.status.toLowerCase() + ")"; }).join(", ") || "none found"), "ok");
+    }).catch(function(e){ setStatus($("sq-locations"), e.message, "bad"); });
+  });
+  $("sq-overwrite").addEventListener("change", function(){
+    api("/settings", { method:"POST", body:{ squareOverwritePrices: this.checked } }).then(function(s){ settings = s; });
+  });
+  $("sq-push-all").addEventListener("click", function(){
+    var n = designs.filter(function(d){ return $("sq-hidden").checked || d.visible !== false; }).length;
+    if (!confirm("Push " + n + " designs to Square? Existing items are updated, new ones are created.")) return;
+    api("/square/push-all", { method:"POST", body:{ includeHidden: $("sq-hidden").checked } })
+      .then(checkSquareJob).catch(function(e){ setStatus($("sq-status"), e.message, "bad"); });
+  });
+  var pollTimer;
+  function checkSquareJob(){
+    clearTimeout(pollTimer);
+    api("/square/status").then(function(j){
+      if (!j.startedAt) return;
+      $("sq-progress").hidden = false;
+      $("sq-bar").style.width = (j.total ? Math.round(j.done / j.total * 100) : 100) + "%";
+      $("sq-push-all").disabled = j.running || !status.square;
+      if (j.running) {
+        setStatus($("sq-status"), "Pushing " + j.done + " of " + j.total + "…");
+        pollTimer = setTimeout(checkSquareJob, 1500);
+      } else {
+        setStatus($("sq-status"), "Finished: " + (j.done - j.failed) + " pushed" + (j.failed ? ", " + j.failed + " failed." : "."), j.failed ? "bad" : "ok");
+        loadDesigns();
+      }
+      $("sq-errors").innerHTML = j.errors.map(function(x){ return "<li>" + esc(x.slug) + ": " + esc(x.error) + "</li>"; }).join("");
+    });
+  }
 })();

@@ -1,33 +1,26 @@
 services:
   n3d-catalog:
     build: .
-    # If you'd rather Portainer pull a prebuilt image instead of building on
-    # the host, push this to your own registry and swap `build: .` for
-    # `image: yourregistry/n3d-catalog:latest`.
     container_name: n3d-catalog
     restart: unless-stopped
     ports:
       - "8090:3000"
     environment:
-      PORT: "3000"
       N3D_API_KEY: ${N3D_API_KEY}
       ADMIN_PASSWORD: ${ADMIN_PASSWORD}
       SESSION_SECRET: ${SESSION_SECRET}
-      # Set to "true" once this sits behind HTTPS (reverse proxy, Cloudflare
-      # Tunnel, etc.) so the admin session cookie requires a secure context.
-      COOKIE_SECURE: "false"
-      # SMTP — leave unset/blank to disable emailed PDF quotes
-      SMTP_HOST: ${SMTP_HOST:-}
+      # set to "true" once this is served over HTTPS
+      COOKIE_SECURE: ${COOKIE_SECURE:-false}
+      # email (quote PDFs to the customer and to you)
+      SMTP_HOST: ${SMTP_HOST}
       SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_SECURE: ${SMTP_SECURE:-false}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASS: ${SMTP_PASS:-}
-      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
-      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-}
-      # Square catalog push — leave unset to disable
-      SQUARE_ACCESS_TOKEN: ${SQUARE_ACCESS_TOKEN:-}
-      SQUARE_LOCATION_ID: ${SQUARE_LOCATION_ID:-}
-      SQUARE_ENVIRONMENT: ${SQUARE_ENVIRONMENT:-}
+      SMTP_SECURE: ${SMTP_SECURE:-}
+      SMTP_USER: ${SMTP_USER}
+      SMTP_PASS: ${SMTP_PASS}
+      SMTP_FROM: ${SMTP_FROM}
+      # Square
+      SQUARE_ACCESS_TOKEN: ${SQUARE_ACCESS_TOKEN}
+      SQUARE_ENV: ${SQUARE_ENV:-production}
     volumes:
       - n3d_catalog_data:/app/data
 

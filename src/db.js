@@ -1,178 +1,104 @@
 "use strict";
-// Lightweight JSON-file "database". Fine for a catalog of a few hundred
-// designs and a single admin — avoids native modules (sqlite bindings etc.)
-// so the Docker image stays a plain node:alpine build with no compiler.
-
+// Small JSON-file datastore. Plenty for a few hundred designs and a quote log,
+// and it keeps the Docker image free of native modules.
 const fs = require("fs");
 const path = require("path");
 
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DB_PATH = path.join(DATA_DIR, "db.json");
-const MAX_QUOTE_LOGS = 500;
-const MAX_ERROR_LOGS = 300;
 
-const DEFAULT_DATA = {
-  designs: {},      // slug -> { ...n3d fields..., price_cents, shop_url, visible, featured, synced_at }
-  quoteLogs: [],     // recent quote request attempts, newest first, capped at MAX_QUOTE_LOGS
-  errorLogs: [],     // recent server-side errors, newest first, capped at MAX_ERROR_LOGS
-  settings: {
-    businessName: "",
-    businessEmail: "",
-    lastCursor: null,          // updated_since cursor for incremental N3D sync
-    hoursPerDayCapacity: 6,    // printer-hours/day used to estimate lead time
-    leadTimeBufferDays: 2,     // extra days added on top of raw print time (queue, shipping, etc.)
-    eventModeEnabled: false,   // when true, public catalog only shows featured designs
-    kioskModeEnabled: false,   // when true, storefront auto-resets after idle time
-    kioskIdleMinutes: 2        // idle minutes before a kiosk auto-reset
-  }
+const DEFAULT_SETTINGS = {
+  businessName: "",
+  businessEmail: "",     // where "our" copy of each quote goes
+  businessPhone: "",
+  tagline: "Browse designs, build a quote, and we'll email you a PDF estimate.",
+  quoteFooter: "This is an estimate, not an invoice. Final pricing is confirmed before printing. " +
+               "Designs are fan-made and not affiliated with or endorsed by Nintendo, Game Freak, or The Pokémon Company.",
+  currency: "USD",
+  pricing: {
+    baseFee: 3.00,        // $ per item
+    perGram: 0.08,        // $ per gram of filament
+    perHour: 1.50,        // $ per hour of print time
+    markupPct: 0,         // % added on top
+    minPrice: 5.00,       // floor per item
+    roundTo: 1.00         // round up to nearest $X (0 = no rounding)
+  },
+  squareOverwritePrices: true, // re-push replaces the price in Square
+  kioskIdleSeconds: 90,
+  logos: {},             // { light: {ext,type,v}, dark: {...} } files live in DATA_DIR
+  logoShowName: true,    // show business name next to the logo
+  lastCursor: null
 };
 
-function ensureDataDir() {
-  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-}
+function ensureDir() { fs.mkdirSync(DATA_DIR, { recursive: true }); }
 
 function load() {
-  ensureDataDir();
-  if (!fs.existsSync(DB_PATH)) {
-    fs.writeFileSync(DB_PATH, JSON.stringify(DEFAULT_DATA, null, 2));
-    return structuredClone(DEFAULT_DATA);
-  }
+  ensureDir();
+  if (!fs.existsSync(DB_PATH)) return { designs: {}, quotes: [], settings: structuredClone(DEFAULT_SETTINGS) };
   try {
-    const raw = fs.readFileSync(DB_PATH, "utf8");
-    const parsed = JSON.parse(raw);
-    // merge with defaults so new fields introduced later don't crash old data files
-    return {
-      designs: parsed.designs || {},
-      quoteLogs: parsed.quoteLogs || [],
-      errorLogs: parsed.errorLogs || [],
-      settings: Object.assign({}, DEFAULT_DATA.settings, parsed.settings || {})
-    };
+    const p = JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
+    const settings = Object.assign(structuredClone(DEFAULT_SETTINGS), p.settings || {});
+    settings.pricing = Object.assign({}, DEFAULT_SETTINGS.pricing, (p.settings || {}).pricing || {});
+    return { designs: p.designs || {}, quotes: p.quotes || [], settings };
   } catch (err) {
-    console.error("[db] Failed to read db.json, starting fresh:", err.message);
-    return structuredClone(DEFAULT_DATA);
+    console.error("[db] db.json unreadable, backing it up and starting fresh:", err.message);
+    try { fs.copyFileSync(DB_PATH, DB_PATH + ".corrupt-" + Date.now()); } catch (_) {}
+    return { designs: {}, quotes: [], settings: structuredClone(DEFAULT_SETTINGS) };
   }
 }
 
 let state = load();
-let writeTimer = null;
+let timer = null;
 
 function persist() {
-  ensureDataDir();
+  ensureDir();
   const tmp = DB_PATH + ".tmp";
   fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
   fs.renameSync(tmp, DB_PATH);
 }
-
 function scheduleWrite() {
-  if (writeTimer) return;
-  writeTimer = setTimeout(() => {
-    writeTimer = null;
-    try { persist(); } catch (err) { console.error("[db] write failed:", err.message); }
-  }, 150);
+  if (timer) return;
+  timer = setTimeout(() => { timer = null; try { persist(); } catch (e) { console.error("[db] write failed:", e.message); } }, 150);
+}
+function flushSync() {
+  if (timer) { clearTimeout(timer); timer = null; }
+  try { persist(); } catch (e) { console.error("[db] flush failed:", e.message); }
 }
 
-// ---- designs ----
+// designs — undefined values are skipped so syncs never clobber admin fields
 function upsertDesign(slug, fields) {
-  const existing = state.designs[slug] || {};
-  // drop undefined values so callers can pass "only set this on first insert"
-  // fields without clobbering existing admin-set data on updates
   const clean = {};
-  for (const [k, v] of Object.entries(fields)) {
-    if (v !== undefined) clean[k] = v;
-  }
-  state.designs[slug] = Object.assign({}, existing, clean, { slug });
+  for (const [k, v] of Object.entries(fields)) if (v !== undefined) clean[k] = v;
+  state.designs[slug] = Object.assign({}, state.designs[slug] || {}, clean, { slug });
   scheduleWrite();
   return state.designs[slug];
 }
+const getDesign = (slug) => state.designs[slug] || null;
+const allDesigns = () => Object.values(state.designs);
 
-function getDesign(slug) {
-  return state.designs[slug] || null;
+// quotes
+function addQuote(q) { state.quotes.unshift(q); scheduleWrite(); return q; }
+function updateQuote(id, fields) {
+  const q = state.quotes.find(x => x.id === id);
+  if (q) { Object.assign(q, fields); scheduleWrite(); }
+  return q || null;
 }
+const getQuote = (id) => state.quotes.find(q => q.id === id) || null;
+const allQuotes = () => state.quotes;
 
-function allDesigns() {
-  return Object.values(state.designs);
-}
-
-function setAdminFields(slug, { price_cents, shop_url, visible, featured }) {
-  const existing = state.designs[slug];
-  if (!existing) return null;
-  if (price_cents !== undefined) existing.price_cents = price_cents;
-  if (shop_url !== undefined) existing.shop_url = shop_url;
-  if (visible !== undefined) existing.visible = visible;
-  if (featured !== undefined) existing.featured = featured;
-  scheduleWrite();
-  return existing;
-}
-
-function setSquareFields(slug, fields) {
-  const existing = state.designs[slug];
-  if (!existing) return null;
-  Object.assign(existing, fields);
-  scheduleWrite();
-  return existing;
-}
-
-// ---- quote logs ----
-function addQuoteLog(entry) {
-  const record = Object.assign({
-    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
-    createdAt: new Date().toISOString()
-  }, entry);
-  state.quoteLogs.unshift(record);
-  if (state.quoteLogs.length > MAX_QUOTE_LOGS) {
-    state.quoteLogs.length = MAX_QUOTE_LOGS;
-  }
-  scheduleWrite();
-  return record;
-}
-
-function listQuoteLogs() {
-  return state.quoteLogs;
-}
-
-// ---- error logs ----
-function addErrorLog(entry) {
-  const record = Object.assign({
-    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
-    createdAt: new Date().toISOString()
-  }, entry);
-  state.errorLogs.unshift(record);
-  if (state.errorLogs.length > MAX_ERROR_LOGS) {
-    state.errorLogs.length = MAX_ERROR_LOGS;
-  }
-  scheduleWrite();
-  return record;
-}
-
-function listErrorLogs() {
-  return state.errorLogs;
-}
-
-function clearErrorLogs() {
-  state.errorLogs = [];
-  scheduleWrite();
-}
-
-// ---- settings ----
-function getSettings() {
-  return state.settings;
-}
-
+// settings
+const getSettings = () => state.settings;
 function updateSettings(fields) {
-  state.settings = Object.assign({}, state.settings, fields);
+  const next = Object.assign({}, state.settings, fields);
+  if (fields.pricing) next.pricing = Object.assign({}, state.settings.pricing, fields.pricing);
+  state.settings = next;
   scheduleWrite();
-  return state.settings;
-}
-
-function flushSync() {
-  // used on graceful shutdown to make sure the last write lands on disk
-  if (writeTimer) { clearTimeout(writeTimer); writeTimer = null; }
-  try { persist(); } catch (err) { console.error("[db] final flush failed:", err.message); }
+  return next;
 }
 
 module.exports = {
-  upsertDesign, getDesign, allDesigns, setAdminFields, setSquareFields,
-  addQuoteLog, listQuoteLogs,
-  addErrorLog, listErrorLogs, clearErrorLogs,
-  getSettings, updateSettings, flushSync
+  DATA_DIR,
+  upsertDesign, getDesign, allDesigns,
+  addQuote, updateQuote, getQuote, allQuotes,
+  getSettings, updateSettings, flushSync, DEFAULT_SETTINGS
 };
