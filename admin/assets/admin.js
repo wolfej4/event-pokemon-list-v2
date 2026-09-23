@@ -37,6 +37,7 @@
     [].forEach.call(document.querySelectorAll("[data-panel]"), function(p){ p.hidden = p.dataset.panel !== b.dataset.tab; });
     if (b.dataset.tab === "quotes") loadQuotes();
     if (b.dataset.tab === "square") checkSquareJob();
+    if (b.dataset.tab === "inventory") initInventory();
   });
 
   function boot(){
@@ -294,6 +295,60 @@
       .catch(function(err){ note.textContent = err.message; })
       .finally(function(){ b.disabled = false; });
   });
+
+  // ---------- inventory / spoolman ----------
+  var spInited = false;
+  function initInventory(){
+    $("sp-low").value = settings.spoolmanLowStockGrams;
+    $("sp-match").value = settings.spoolmanMatchThreshold;
+    $("sp-conn").textContent = status.spoolman ? "SPOOLMAN_URL is set." : "SPOOLMAN_URL isn't set. Add it to the stack's environment variables and redeploy.";
+    $("sp-test").disabled = $("sp-check").disabled = !status.spoolman;
+    if (spInited) return;
+    spInited = true;
+    api("/spoolman/report").then(function(r){ if (r.report) renderInventory(r.report); });
+  }
+  $("sp-test").addEventListener("click", function(){
+    setStatus($("sp-conn-status"), "Connecting to Spoolman…");
+    api("/spoolman/test").then(function(r){
+      setStatus($("sp-conn-status"), "Connected" + (r.info && r.info.version ? " — Spoolman v" + r.info.version : "") + ".", "ok");
+    }).catch(function(e){ setStatus($("sp-conn-status"), e.message, "bad"); });
+  });
+  $("sp-settings-form").addEventListener("submit", function(e){
+    e.preventDefault();
+    api("/settings", { method:"POST", body:{ spoolmanLowStockGrams: $("sp-low").value, spoolmanMatchThreshold: $("sp-match").value } })
+      .then(function(s){ settings = s; setStatus($("sp-settings-status"), "Saved.", "ok"); })
+      .catch(function(err){ setStatus($("sp-settings-status"), err.message, "bad"); });
+  });
+  $("sp-check").addEventListener("click", function(){
+    $("sp-check").disabled = true;
+    setStatus($("sp-status"), "Pulling spools from Spoolman and matching colors…");
+    api("/spoolman/check", { method:"POST" })
+      .then(function(r){ renderInventory(r.report); setStatus($("sp-status"), "Done.", "ok"); })
+      .catch(function(e){ setStatus($("sp-status"), e.message, "bad"); })
+      .finally(function(){ $("sp-check").disabled = !status.spoolman; });
+  });
+  function renderInventory(report){
+    var when = new Date(report.generatedAt).toLocaleString();
+    $("sp-summary").textContent = report.toBuy
+      ? report.toBuy + " of " + report.rows.length + " colors need attention — checked " + when + " against " + report.spoolCount + " spools."
+      : "Every color your designs use is in stock — checked " + when + " against " + report.spoolCount + " spools.";
+    $("sp-rows").innerHTML = report.rows.map(function(r){
+      var statusPill = r.status === "missing" ? '<span class="pill bad">Buy — not stocked</span>'
+        : r.status === "low" ? '<span class="pill warn">Buy — running low</span>'
+        : '<span class="pill ok">In stock</span>';
+      var match = r.matched
+        ? '<div class="match-cell"><span class="swatch-sm" style="background:' + esc(r.matchHex) + '"></span>' + esc(r.matchName || r.matchHex) +
+          (r.matchVendor ? ' <span class="muted">(' + esc(r.matchVendor) + ')</span>' : '') + '</div>'
+        : '<span class="muted">No close match in Spoolman</span>';
+      var designs = r.designs.slice(0, 3).join(", ") + (r.designs.length > 3 ? " +" + (r.designs.length - 3) + " more" : "");
+      return '<tr><td><span class="swatch-lg" style="background:' + esc(r.hex) + '"></span></td>' +
+        '<td><div class="color-cell"><div><div class="name">' + esc(r.name) + '</div><div class="hex">' + esc(r.hex) + '</div></div></div></td>' +
+        '<td class="designs-cell" title="' + esc(r.designs.join(", ")) + '">' + r.designCount + ' design' + (r.designCount === 1 ? "" : "s") + '<br>' + esc(designs) + '</td>' +
+        '<td>' + match + '</td>' +
+        '<td>' + (r.matched ? (r.matchGrams + ' g' + (r.matchSpools > 1 ? ' across ' + r.matchSpools + ' spools' : '')) : '<span class="muted">—</span>') + '</td>' +
+        '<td>' + statusPill + '</td></tr>';
+    }).join("") || '<tr><td colspan="6" class="muted">No designs with filament data yet — sync from N3D first.</td></tr>';
+  }
 
   // ---------- square ----------
   $("sq-test").addEventListener("click", function(){

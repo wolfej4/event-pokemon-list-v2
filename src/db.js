@@ -24,6 +24,8 @@ const DEFAULT_SETTINGS = {
     roundTo: 1.00         // round up to nearest $X (0 = no rounding)
   },
   squareOverwritePrices: true, // re-push replaces the price in Square
+  spoolmanLowStockGrams: 250,  // flag a color as low when matched stock falls below this
+  spoolmanMatchThreshold: 60,  // max RGB distance (0-441) to call a design color "in stock"
   kioskIdleSeconds: 90,
   logos: {},             // { light: {ext,type,v}, dark: {...} } files live in DATA_DIR
   logoShowName: true,    // show business name next to the logo

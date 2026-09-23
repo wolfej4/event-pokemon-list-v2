@@ -21,6 +21,8 @@ services:
       # Square
       SQUARE_ACCESS_TOKEN: ${SQUARE_ACCESS_TOKEN}
       SQUARE_ENV: ${SQUARE_ENV:-production}
+      # Spoolman (optional): your instance's base URL, no trailing slash
+      SPOOLMAN_URL: ${SPOOLMAN_URL}
     volumes:
       - n3d_catalog_data:/app/data
 

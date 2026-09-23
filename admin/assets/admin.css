@@ -84,3 +84,12 @@ label.btn{ cursor:pointer; }
 .alert[hidden]{ display:none; }
 .alert strong{ color:var(--bad); }
 .alert code{ display:inline-block; margin-top:6px; }
+
+/* inventory */
+.swatch-lg{ width:26px; height:26px; border-radius:7px; border:1px solid var(--line); flex:none; display:inline-block; }
+.color-cell{ display:flex; align-items:center; gap:10px; }
+.color-cell .name{ font-weight:700; }
+.color-cell .hex{ color:var(--faint); font-size:.75rem; font-family:ui-monospace,monospace; }
+.match-cell{ display:flex; align-items:center; gap:8px; }
+.match-cell .swatch-sm{ width:16px; height:16px; border-radius:5px; border:1px solid var(--line); flex:none; display:inline-block; }
+.designs-cell{ max-width:220px; color:var(--muted); font-size:.82rem; }

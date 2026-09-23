@@ -30,6 +30,12 @@ panel for pricing, N3D sync, and pushing to Square. Light and dark mode on both.
   prices in Square after the first push.
 - **Settings:** business name, tagline, your quote email, phone, PDF fine print,
   kiosk timeout, and connection tests.
+- **Inventory:** if `SPOOLMAN_URL` is set, compares the filament colors your designs
+  actually use against your [Spoolman](https://github.com/Donkie/Spoolman) stock,
+  matched by hex color since the two systems never name colors the same way.
+  Flags colors you don't stock at all and colors below a threshold you set (grams
+  and match sensitivity are both adjustable). Run it on demand with **Check stock
+  now** — it's not automatic, since Spoolman weights only update as you print.
 - **Logo:** upload under Settings. Optional second version for dark mode. Shown in
   the store header, admin bar, browser tab, and on quote PDFs (PNG/JPG only for
   the PDF). Stored on the data volume, so no rebuild is needed to change it.

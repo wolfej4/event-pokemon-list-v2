@@ -31,6 +31,7 @@
       <button role="tab" data-tab="pricing" type="button">Pricing</button>
       <button role="tab" data-tab="quotes" type="button">Quotes</button>
       <button role="tab" data-tab="square" type="button">Square</button>
+      <button role="tab" data-tab="inventory" type="button">Inventory</button>
       <button role="tab" data-tab="settings" type="button">Settings</button>
     </nav>
     <div class="bar-right">
@@ -136,6 +137,42 @@
       </div>
     </section>
 
+
+    <!-- inventory / spoolman -->
+    <section data-panel="inventory" hidden>
+      <div class="head"><div><h2>Filament inventory</h2>
+        <p class="sub">Compares the filament colors your designs use against what’s actually on the shelf in Spoolman, matched by color rather than name (the two systems never call a color the same thing). Flags colors you don’t stock or are running low on.</p></div></div>
+      <div class="split">
+        <div class="panel">
+          <h3>Connection</h3>
+          <p class="sub" id="sp-conn">Checking…</p>
+          <button class="btn" id="sp-test" type="button">Test connection</button>
+          <div class="status" id="sp-conn-status"></div>
+        </div>
+        <form class="panel" id="sp-settings-form">
+          <h3>Thresholds</h3>
+          <div class="grid2">
+            <div class="field"><label for="sp-low">Flag as low below (grams)</label><input id="sp-low" type="number" min="0" step="10"></div>
+            <div class="field"><label for="sp-match">Color match sensitivity (0–441)</label><input id="sp-match" type="number" min="0" max="441" step="5"></div>
+          </div>
+          <p class="sub">Lower sensitivity requires a closer color match before we call it "in stock" — raise it if close-but-not-exact colors (like two different pinks) should still count.</p>
+          <button class="btn primary" type="submit">Save thresholds</button>
+          <span class="status inline" id="sp-settings-status"></span>
+        </form>
+      </div>
+
+      <div class="head" style="margin-top:22px">
+        <div><h3 style="margin:0">Shopping list</h3><p class="sub" id="sp-summary">Run a check to see what to buy.</p></div>
+        <button class="btn primary" id="sp-check" type="button">Check stock now</button>
+      </div>
+      <p class="status" id="sp-status" role="status"></p>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th></th><th>Color your designs use</th><th>Used in</th><th>Closest Spoolman match</th><th>In stock</th><th>Status</th></tr></thead>
+          <tbody id="sp-rows"></tbody>
+        </table>
+      </div>
+    </section>
     <!-- settings -->
     <section data-panel="settings" hidden>
       <div class="head"><div><h2>Settings</h2></div></div>

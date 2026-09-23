@@ -3,6 +3,8 @@ const express = require("express");
 const db = require("../db");
 const n3d = require("../n3dClient");
 const square = require("../squareClient");
+const spoolman = require("../spoolmanClient");
+const { buildColorReport } = require("../inventory");
 const mailer = require("../mailer");
 const { formulaCents, unitCents, fmt } = require("../pricing");
 const { buildQuotePdf } = require("../pdf");
@@ -33,6 +35,7 @@ router.get("/status", (req, res) => {
     smtp: mailer.configured(),
     square: square.configured(),
     squareEnv: process.env.SQUARE_ENV === "sandbox" ? "sandbox" : "production",
+    spoolman: spoolman.configured(),
     storageError: db.writeError()
   });
 });
@@ -105,6 +108,16 @@ router.post("/settings", (req, res) => {
   if (b.kioskIdleSeconds !== undefined) u.kioskIdleSeconds = Math.min(3600, Math.max(15, parseInt(b.kioskIdleSeconds, 10) || 90));
   if (b.squareOverwritePrices !== undefined) u.squareOverwritePrices = !!b.squareOverwritePrices;
   if (b.logoShowName !== undefined) u.logoShowName = !!b.logoShowName;
+  if (b.spoolmanLowStockGrams !== undefined) {
+    const n = Number(b.spoolmanLowStockGrams);
+    if (!Number.isFinite(n) || n < 0) return res.status(400).json({ error: "Low-stock threshold must be 0 or more." });
+    u.spoolmanLowStockGrams = n;
+  }
+  if (b.spoolmanMatchThreshold !== undefined) {
+    const n = Number(b.spoolmanMatchThreshold);
+    if (!Number.isFinite(n) || n < 0 || n > 441) return res.status(400).json({ error: "Color match sensitivity must be between 0 and 441." });
+    u.spoolmanMatchThreshold = n;
+  }
   if (b.pricing) {
     u.pricing = {};
     for (const k of ["baseFee", "perGram", "perHour", "markupPct", "minPrice", "roundTo"]) {
@@ -237,6 +250,27 @@ router.post("/smtp/test", async (req, res) => {
   try { await mailer.verify(); res.json({ ok: true }); }
   catch (e) { res.status(502).json({ ok: false, error: e.message }); }
 });
+
+// ---------- Spoolman ----------
+router.get("/spoolman/test", async (req, res) => {
+  try { res.json({ ok: true, info: await spoolman.testConnection() }); }
+  catch (e) { res.status(502).json({ ok: false, error: e.message }); }
+});
+
+let lastInventoryReport = null;
+router.post("/spoolman/check", async (req, res) => {
+  try {
+    const spools = await spoolman.listSpools();
+    const s = db.getSettings();
+    lastInventoryReport = buildColorReport(db.allDesigns(), spools, {
+      lowStockGrams: s.spoolmanLowStockGrams, matchThreshold: s.spoolmanMatchThreshold
+    });
+    res.json({ ok: true, report: lastInventoryReport });
+  } catch (e) {
+    res.status(502).json({ error: e.message });
+  }
+});
+router.get("/spoolman/report", (req, res) => res.json({ report: lastInventoryReport }));
 
 // ---------- Square ----------
 router.get("/square/test", async (req, res) => {
