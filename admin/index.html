@@ -159,6 +159,31 @@
     </div>
 
     <div class="panel">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px;">
+        <h2 style="margin:0;">Error log</h2>
+        <div class="spacer"></div>
+        <button class="btn small" id="error-log-clear-btn">Clear</button>
+      </div>
+      <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 14px;">
+        Server-side errors — failed logins, sessions rejected as expired,
+        N3D sync failures, and anything else that went wrong on the
+        backend. Square push failures have their own list above instead.
+      </p>
+      <div id="error-log-empty" style="display:none;color:var(--text-faint);font-size:0.85rem;">No errors logged.</div>
+      <table id="error-log-table" style="display:none;">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Type</th>
+            <th>Message</th>
+            <th>Path</th>
+          </tr>
+        </thead>
+        <tbody id="error-log-rows"></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
       <h2>Designs</h2>
       <div class="filter-bar">
         <input id="admin-search" type="text" placeholder="Filter by name…">

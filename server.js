@@ -55,6 +55,7 @@ app.get("*", (req, res) => {
 
 app.use((err, req, res, next) => {
   console.error("[error]", err);
+  db.addErrorLog({ type: "server", message: err.message || "server_error", path: req.originalUrl });
   res.status(500).json({ error: "server_error" });
 });
 

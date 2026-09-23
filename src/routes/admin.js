@@ -16,6 +16,7 @@ const loginLimiter = rateLimit({ windowMs: 15 * 60 * 1000, max: 10 }); // 10 att
 router.post("/login", loginLimiter, (req, res) => {
   const { password } = req.body || {};
   if (!checkPassword(password)) {
+    db.addErrorLog({ type: "auth", message: "Wrong admin password entered", path: "/login" });
     return res.status(401).json({ error: "wrong_password" });
   }
   req.session.isAdmin = true;
@@ -219,6 +220,11 @@ router.post("/sync", async (req, res) => {
     res.json({ ok: true, added, updated, totalSeen: result.totalSeen, spritesFilled });
   } catch (err) {
     const status = err.isAuth ? 502 : 500;
+    db.addErrorLog({
+      type: "sync",
+      message: err.message || "sync_failed",
+      detail: err.isAuth ? "N3D rejected the API key" : undefined
+    });
     res.status(status).json({ error: err.message || "sync_failed" });
   } finally {
     syncInProgress = false;
@@ -306,6 +312,16 @@ router.post("/square-push-all", async (req, res) => {
   } finally {
     squarePushInProgress = false;
   }
+});
+
+// ---- error log ----
+router.get("/error-logs", (req, res) => {
+  res.json({ data: db.listErrorLogs() });
+});
+
+router.post("/error-logs/clear", (req, res) => {
+  db.clearErrorLogs();
+  res.json({ ok: true });
 });
 
 // ---- quote request log ----

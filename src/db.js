@@ -9,10 +9,12 @@ const path = require("path");
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "..", "data");
 const DB_PATH = path.join(DATA_DIR, "db.json");
 const MAX_QUOTE_LOGS = 500;
+const MAX_ERROR_LOGS = 300;
 
 const DEFAULT_DATA = {
   designs: {},      // slug -> { ...n3d fields..., price_cents, shop_url, visible, featured, synced_at }
   quoteLogs: [],     // recent quote request attempts, newest first, capped at MAX_QUOTE_LOGS
+  errorLogs: [],     // recent server-side errors, newest first, capped at MAX_ERROR_LOGS
   settings: {
     businessName: "",
     businessEmail: "",
@@ -42,6 +44,7 @@ function load() {
     return {
       designs: parsed.designs || {},
       quoteLogs: parsed.quoteLogs || [],
+      errorLogs: parsed.errorLogs || [],
       settings: Object.assign({}, DEFAULT_DATA.settings, parsed.settings || {})
     };
   } catch (err) {
@@ -127,6 +130,29 @@ function listQuoteLogs() {
   return state.quoteLogs;
 }
 
+// ---- error logs ----
+function addErrorLog(entry) {
+  const record = Object.assign({
+    id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+    createdAt: new Date().toISOString()
+  }, entry);
+  state.errorLogs.unshift(record);
+  if (state.errorLogs.length > MAX_ERROR_LOGS) {
+    state.errorLogs.length = MAX_ERROR_LOGS;
+  }
+  scheduleWrite();
+  return record;
+}
+
+function listErrorLogs() {
+  return state.errorLogs;
+}
+
+function clearErrorLogs() {
+  state.errorLogs = [];
+  scheduleWrite();
+}
+
 // ---- settings ----
 function getSettings() {
   return state.settings;
@@ -147,5 +173,6 @@ function flushSync() {
 module.exports = {
   upsertDesign, getDesign, allDesigns, setAdminFields, setSquareFields,
   addQuoteLog, listQuoteLogs,
+  addErrorLog, listErrorLogs, clearErrorLogs,
   getSettings, updateSettings, flushSync
 };

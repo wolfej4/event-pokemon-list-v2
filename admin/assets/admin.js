@@ -42,6 +42,10 @@
   const qrCopyBtn = document.getElementById("qr-copy-btn");
   const qrPrintBtn = document.getElementById("qr-print-btn");
   const qrStatus = document.getElementById("qr-status");
+  const errorLogEmpty = document.getElementById("error-log-empty");
+  const errorLogTable = document.getElementById("error-log-table");
+  const errorLogRowsEl = document.getElementById("error-log-rows");
+  const errorLogClearBtn = document.getElementById("error-log-clear-btn");
 
   let allDesigns = [];
   const selectedSlugs = new Set();
@@ -55,6 +59,27 @@
     if(r.isAdmin) showDashboard(); else showLogin();
   }
 
+  // ---- session-expiry handling ----
+  // Sessions are in-memory server-side, so a server restart (redeploy etc.)
+  // invalidates every existing session at once — the dashboard stays open
+  // client-side (nothing told it to log out) until the next API call 401s.
+  // Without this, that shows up as a confusing "Sync failed: not_authenticated"
+  // or a broken QR code image instead of the real explanation.
+  let sessionExpired = false;
+  async function adminFetch(url, opts){
+    const res = await fetch(url, opts);
+    if(res.status === 401 && !sessionExpired){
+      let body = null;
+      try{ body = await res.clone().json(); }catch(e){}
+      if(body && body.error === "not_authenticated"){
+        sessionExpired = true;
+        showLogin();
+        loginError.textContent = "Your session expired — please log in again.";
+      }
+    }
+    return res;
+  }
+
   function showLogin(){
     loginScreen.style.display = "flex";
     dashboard.style.display = "none";
@@ -63,14 +88,14 @@
     loginScreen.style.display = "none";
     dashboard.style.display = "block";
     await loadSquareStatus();
-    await Promise.all([loadSettings(), loadDesigns(), loadSmtpStatus(), loadQuotes(), loadQrCode()]);
+    await Promise.all([loadSettings(), loadDesigns(), loadSmtpStatus(), loadQuotes(), loadQrCode(), loadErrorLogs()]);
   }
 
   // ---- storefront QR code ----
   async function loadQrCode(){
     qrCodeImg.src = "/api/admin/qrcode.png?t=" + Date.now(); // bust the cache if the host changes between visits
     try{
-      const r = await fetch("/api/admin/qrcode-url").then(r => r.json());
+      const r = await adminFetch("/api/admin/qrcode-url").then(r => r.json());
       qrUrlEl.textContent = r.url;
     }catch(err){
       qrUrlEl.textContent = "";
@@ -106,6 +131,7 @@
         return;
       }
       pwInput.value = "";
+      sessionExpired = false;
       await showDashboard();
     }catch(err){
       loginError.textContent = "Couldn't reach the server.";
@@ -121,7 +147,7 @@
 
   // ---- settings ----
   async function loadSettings(){
-    const s = await fetch("/api/admin/settings").then(r => r.json());
+    const s = await adminFetch("/api/admin/settings").then(r => r.json());
     bizName.value = s.businessName || "";
     bizEmail.value = s.businessEmail || "";
     hoursPerDay.value = s.hoursPerDayCapacity != null ? s.hoursPerDayCapacity : 6;
@@ -133,7 +159,7 @@
   saveSettingsBtn.addEventListener("click", async () => {
     settingsStatus.textContent = "Saving…";
     try{
-      const res = await fetch("/api/admin/settings", {
+      const res = await adminFetch("/api/admin/settings", {
         method: "POST", headers: {"Content-Type":"application/json"},
         body: JSON.stringify({
           businessName: bizName.value,
@@ -153,7 +179,7 @@
   saveEventSettingsBtn.addEventListener("click", async () => {
     eventSettingsStatus.textContent = "Saving…";
     try{
-      const res = await fetch("/api/admin/settings", {
+      const res = await adminFetch("/api/admin/settings", {
         method: "POST", headers: {"Content-Type":"application/json"},
         body: JSON.stringify({
           eventModeEnabled: eventModeToggle.checked,
@@ -173,7 +199,7 @@
   // ---- SMTP status ----
   async function loadSmtpStatus(){
     try{
-      const r = await fetch("/api/admin/smtp-status").then(r => r.json());
+      const r = await adminFetch("/api/admin/smtp-status").then(r => r.json());
       smtpStatusLine.textContent = r.configured
         ? "SMTP is configured — customers can receive PDF quotes by email."
         : "SMTP is not configured — the storefront will fall back to a plain mailto link instead of emailing PDFs. Set SMTP_HOST / SMTP_USER / SMTP_PASS etc. in the environment.";
@@ -185,7 +211,7 @@
     smtpTestBtn.disabled = true;
     smtpTestStatus.textContent = "Testing…";
     try{
-      const res = await fetch("/api/admin/smtp-test", { method: "POST" });
+      const res = await adminFetch("/api/admin/smtp-test", { method: "POST" });
       const j = await res.json();
       smtpTestStatus.textContent = res.ok ? "Connected OK." : ("Failed: " + j.error);
     }catch(err){
@@ -199,7 +225,7 @@
   let squareConfigured = false;
   async function loadSquareStatus(){
     try{
-      const r = await fetch("/api/admin/square-status").then(r => r.json());
+      const r = await adminFetch("/api/admin/square-status").then(r => r.json());
       squareConfigured = !!r.configured;
       squareStatusLine.textContent = squareConfigured
         ? "Square is configured — designs can be pushed to your Square catalog."
@@ -213,7 +239,7 @@
     squarePushAllBtn.disabled = true;
     squarePushAllStatus.textContent = "Pushing to Square — this can take a moment…";
     try{
-      const res = await fetch("/api/admin/square-push-all", {
+      const res = await adminFetch("/api/admin/square-push-all", {
         method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({})
       });
       const j = await res.json();
@@ -229,7 +255,7 @@
 
   // ---- designs ----
   async function loadDesigns(){
-    const r = await fetch("/api/admin/designs").then(r => r.json());
+    const r = await adminFetch("/api/admin/designs").then(r => r.json());
     allDesigns = r.data || [];
     renderRows();
     renderSquareFailures();
@@ -277,7 +303,7 @@
       retryBtn.disabled = true;
       retryBtn.textContent = "Retrying…";
       try{
-        const res = await fetch("/api/admin/designs/" + encodeURIComponent(d.slug) + "/square-push", { method: "POST" });
+        const res = await adminFetch("/api/admin/designs/" + encodeURIComponent(d.slug) + "/square-push", { method: "POST" });
         const j = await res.json();
         if(!res.ok) throw new Error(j.error || "push failed");
         await loadDesigns();
@@ -333,7 +359,7 @@
     pushSelectedBtn.disabled = true;
     selectedCountEl.textContent = "Pushing " + slugs.length + " to Square…";
     try{
-      const res = await fetch("/api/admin/square-push-all", {
+      const res = await adminFetch("/api/admin/square-push-all", {
         method: "POST", headers: {"Content-Type":"application/json"},
         body: JSON.stringify({ slugs })
       });
@@ -432,7 +458,7 @@
       squareStatus.textContent = "Pushing…";
       squareStatus.style.color = "";
       try{
-        const res = await fetch("/api/admin/designs/" + encodeURIComponent(d.slug) + "/square-push", { method: "POST" });
+        const res = await adminFetch("/api/admin/designs/" + encodeURIComponent(d.slug) + "/square-push", { method: "POST" });
         const j = await res.json();
         if(!res.ok) throw new Error(j.error || "push failed");
         Object.assign(d, j.data);
@@ -462,7 +488,7 @@
       saveBtn.disabled = true;
       status.textContent = "Saving…";
       try{
-        const res = await fetch("/api/admin/designs/" + encodeURIComponent(d.slug), {
+        const res = await adminFetch("/api/admin/designs/" + encodeURIComponent(d.slug), {
           method: "POST", headers: {"Content-Type":"application/json"},
           body: JSON.stringify({
             price: priceInput.value === "" ? "" : priceInput.value,
@@ -493,7 +519,7 @@
   // ---- quote request log ----
   async function loadQuotes(){
     try{
-      const r = await fetch("/api/admin/quotes").then(r => r.json());
+      const r = await adminFetch("/api/admin/quotes").then(r => r.json());
       const rows = r.data || [];
       quotesEmpty.style.display = rows.length ? "none" : "block";
       quotesTable.style.display = rows.length ? "table" : "none";
@@ -526,12 +552,52 @@
     return tr;
   }
 
+  // ---- error log ----
+  async function loadErrorLogs(){
+    try{
+      const r = await adminFetch("/api/admin/error-logs").then(r => r.json());
+      const rows = r.data || [];
+      errorLogEmpty.style.display = rows.length ? "none" : "block";
+      errorLogTable.style.display = rows.length ? "table" : "none";
+      errorLogRowsEl.innerHTML = "";
+      const frag = document.createDocumentFragment();
+      for(const e of rows) frag.appendChild(buildErrorLogRow(e));
+      errorLogRowsEl.appendChild(frag);
+    }catch(err){
+      errorLogEmpty.style.display = "block";
+      errorLogEmpty.textContent = "Couldn't load the error log.";
+    }
+  }
+
+  function buildErrorLogRow(e){
+    const tr = document.createElement("tr");
+    const date = new Date(e.createdAt);
+    const dateStr = isNaN(date) ? e.createdAt : date.toLocaleString([], { month:"short", day:"numeric", hour:"numeric", minute:"2-digit", second:"2-digit" });
+    const message = e.detail ? e.message + " — " + e.detail : e.message;
+    tr.innerHTML =
+      '<td>' + escapeHtml(dateStr) + '</td>' +
+      '<td><span style="font-family:var(--mono);font-size:0.72rem;color:var(--text-faint);">' + escapeHtml(e.type || "") + '</span></td>' +
+      '<td style="color:var(--red);">' + escapeHtml(message || "") + '</td>' +
+      '<td style="color:var(--text-faint);font-size:0.76rem;">' + escapeHtml(e.path || "") + '</td>';
+    return tr;
+  }
+
+  errorLogClearBtn.addEventListener("click", async () => {
+    errorLogClearBtn.disabled = true;
+    try{
+      await adminFetch("/api/admin/error-logs/clear", { method: "POST" });
+      await loadErrorLogs();
+    }finally{
+      errorLogClearBtn.disabled = false;
+    }
+  });
+
   // ---- sync ----
   syncBtn.addEventListener("click", async () => {
     syncBtn.disabled = true;
     syncStatus.textContent = "Syncing from N3D — this can take a moment…";
     try{
-      const res = await fetch("/api/admin/sync", {
+      const res = await adminFetch("/api/admin/sync", {
         method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({ full: false })
       });
       const j = await res.json();

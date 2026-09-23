@@ -1,5 +1,6 @@
 "use strict";
 const crypto = require("crypto");
+const db = require("./db");
 
 function timingSafeEqual(a, b) {
   const bufA = Buffer.from(String(a));
@@ -20,6 +21,16 @@ function checkPassword(candidate) {
 
 function requireAdmin(req, res, next) {
   if (req.session && req.session.isAdmin) return next();
+  // Sessions are in-memory, so this fires a lot after a server
+  // restart/redeploy — the browser still has an old session cookie the
+  // server no longer recognizes. Logging it here (rather than only where
+  // each route reports "sync failed" etc.) gives one place to see the
+  // real cause instead of a handful of unrelated-looking error messages.
+  db.addErrorLog({
+    type: "auth",
+    message: "Rejected request — no valid admin session (likely expired, or the server restarted since login)",
+    path: req.originalUrl
+  });
   return res.status(401).json({ error: "not_authenticated" });
 }
 
