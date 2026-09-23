@@ -1,0 +1,49 @@
+services:
+  n3d-catalog:
+    build: .
+    # Compose Manager builds this from the Dockerfile in this same folder,
+    # so clone/copy the whole repo onto the array (e.g.
+    # /mnt/user/appdata/n3d-catalog/src) before adding this stack — don't
+    # just drop this one file on its own. If you'd rather not build on the
+    # NAS, push an image to a registry and swap `build: .` for
+    # `image: yourregistry/n3d-catalog:latest`.
+    container_name: n3d-catalog
+    restart: unless-stopped
+    ports:
+      - "8090:3000"
+    environment:
+      PORT: "3000"
+      N3D_API_KEY: ${N3D_API_KEY}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      SESSION_SECRET: ${SESSION_SECRET}
+      # Leave "false" unless /admin is reached ONLY over HTTPS (a reverse
+      # proxy / Cloudflare Tunnel in front of it). Setting this "true" while
+      # you're still hitting it over plain http://<unraid-ip>:8090 breaks
+      # admin login — every request 401s right after logging in, because
+      # the browser won't store a Secure cookie over an insecure connection.
+      COOKIE_SECURE: "false"
+      # SMTP — leave the .env values blank to disable emailed PDF quotes
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      SMTP_FROM_EMAIL: ${SMTP_FROM_EMAIL:-}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-}
+      # Square catalog push — leave the .env values blank to disable
+      SQUARE_ACCESS_TOKEN: ${SQUARE_ACCESS_TOKEN:-}
+      SQUARE_LOCATION_ID: ${SQUARE_LOCATION_ID:-}
+      SQUARE_ENVIRONMENT: ${SQUARE_ENVIRONMENT:-}
+    volumes:
+      # Bind-mounted into appdata (rather than a named volume) so it shows
+      # up under Unraid's normal appdata share — visible in the file
+      # manager and picked up automatically by the CA Backup/Restore
+      # plugin. Create this folder first, or let Docker create it as root
+      # on first run.
+      - /mnt/user/appdata/n3d-catalog:/app/data
+    labels:
+      # Purely cosmetic: lets Unraid show a WebUI link/icon for this
+      # container on the main Docker tab, same as native-template apps.
+      # The icon is served by the app itself once it's up.
+      net.unraid.docker.webui: "http://[IP]:[PORT:8090]/admin"
+      net.unraid.docker.icon: "http://[IP]:[PORT:8090]/assets/icon-512.png"

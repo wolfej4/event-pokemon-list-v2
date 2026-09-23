@@ -181,6 +181,39 @@ off or switch to accessing it over HTTPS. The server logs a warning on
 startup when this is set, and the admin panel's Error log will call out
 this exact cause if it happens.
 
+### 2c. Deploy on Unraid
+
+Uses `docker-compose.unraid.yml` instead of the plain `docker-compose.yml` —
+same app, but with a bind mount into `/mnt/user/appdata` (instead of a named
+volume) so the data file shows up in Unraid's file manager and gets picked
+up by the CA Backup/Restore plugin automatically, plus WebUI/icon labels so
+it gets a proper entry on the Docker tab.
+
+1. Install the **Compose Manager** (or **Docker Compose Manager**) plugin
+   from Community Applications if you don't already have it.
+2. Copy this whole repo onto the array, e.g. to
+   `/mnt/user/appdata/n3d-catalog/src` — Compose Manager builds the image
+   from the `Dockerfile` there, it isn't pulling a prebuilt one.
+3. In Compose Manager, add a new stack pointed at that folder and use
+   `docker-compose.unraid.yml` as its compose file.
+4. Create a `.env` file next to it (same folder) with at minimum:
+   ```
+   N3D_API_KEY=...
+   ADMIN_PASSWORD=...
+   SESSION_SECRET=...
+   ```
+   Add the SMTP/Square variables the same way if you're using those — see
+   `docker-compose.unraid.yml` for the full list; anything left out defaults
+   to blank/disabled.
+5. Compose it up. First run creates `/mnt/user/appdata/n3d-catalog` if it
+   doesn't already exist.
+6. Visit `http://<unraid-ip>:8090/admin`, log in, and run **Sync from N3D**.
+
+Leave `COOKIE_SECURE=false` (the default in that file) unless you're
+putting this behind HTTPS — see the callout above; it applies here too, and
+is the single most common way this breaks on a home server setup like
+Unraid's, since most people reach it via a raw LAN IP:port.
+
 ## Day-to-day use
 
 - **Sync from N3D**: pulls new/changed designs from the API. Safe to run
