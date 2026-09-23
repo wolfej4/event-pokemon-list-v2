@@ -170,6 +170,17 @@ it's customer-facing — Traefik, Nginx Proxy Manager, Cloudflare Tunnel,
 whatever you're already running on Wolfden), set `COOKIE_SECURE=true` in the
 stack's environment variables so the admin session cookie requires HTTPS.
 
+**Important:** only set `COOKIE_SECURE=true` if `/admin` is *exclusively*
+reached over HTTPS. With it set, logging in over plain HTTP (a raw
+`ip:port`, no TLS — e.g. testing locally, or on the same LAN as an event)
+will look like it succeeds, but the browser silently won't store the
+session cookie, so every request right after 401s with `not_authenticated`
+— in every browser, including a fresh private window, since no session was
+ever actually established. If you hit that, either turn `COOKIE_SECURE`
+off or switch to accessing it over HTTPS. The server logs a warning on
+startup when this is set, and the admin panel's Error log will call out
+this exact cause if it happens.
+
 ## Day-to-day use
 
 - **Sync from N3D**: pulls new/changed designs from the API. Safe to run

@@ -21,14 +21,29 @@ function checkPassword(candidate) {
 
 function requireAdmin(req, res, next) {
   if (req.session && req.session.isAdmin) return next();
-  // Sessions are in-memory, so this fires a lot after a server
-  // restart/redeploy — the browser still has an old session cookie the
-  // server no longer recognizes. Logging it here (rather than only where
-  // each route reports "sync failed" etc.) gives one place to see the
-  // real cause instead of a handful of unrelated-looking error messages.
+
+  // Two very different root causes produce the exact same 401 here, so
+  // tell them apart instead of logging one generic message:
+  //
+  // 1. COOKIE_SECURE=true but this request came in over plain HTTP —
+  //    the browser (rightly) refuses to store/send a cookie marked
+  //    Secure over an insecure connection, and express-session won't
+  //    even set it in the first place. Login "succeeds" (200 OK) but no
+  //    session cookie is ever saved, so *every* request after that
+  //    — in any browser, including a fresh private window — 401s. This
+  //    is the likely cause if it happens immediately and consistently.
+  // 2. The session really did expire, or the server restarted since
+  //    login (sessions are in-memory) — the browser has a cookie the
+  //    server just doesn't recognize anymore. This is the likely cause
+  //    if it only started happening after a while, or after a redeploy.
+  const cookieRequiresHttps = process.env.COOKIE_SECURE === "true";
+  const insecureMismatch = cookieRequiresHttps && !req.secure;
+
   db.addErrorLog({
     type: "auth",
-    message: "Rejected request — no valid admin session (likely expired, or the server restarted since login)",
+    message: insecureMismatch
+      ? "Rejected request — COOKIE_SECURE=true but this request came in over plain HTTP, so the browser never stored the session cookie. Set COOKIE_SECURE=false (or access the admin panel over HTTPS) to fix this."
+      : "Rejected request — no valid admin session (likely expired, or the server restarted since login)",
     path: req.originalUrl
   });
   return res.status(401).json({ error: "not_authenticated" });

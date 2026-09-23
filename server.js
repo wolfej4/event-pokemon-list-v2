@@ -21,6 +21,16 @@ if (!process.env.ADMIN_PASSWORD) {
 if (!SESSION_SECRET) {
   console.warn("[startup] SESSION_SECRET is not set — using an insecure default. Set one in production.");
 }
+if (process.env.COOKIE_SECURE === "true") {
+  console.warn(
+    "[startup] COOKIE_SECURE=true — the admin session cookie will only be " +
+    "set/sent over HTTPS. If you (or a QR code) access /admin over plain " +
+    "HTTP (a raw IP:port, no reverse proxy TLS), login will appear to " +
+    "succeed but every request after it will 401 with not_authenticated, " +
+    "in every browser. Set COOKIE_SECURE=false unless /admin is only ever " +
+    "reached over HTTPS."
+  );
+}
 
 const app = express();
 app.disable("x-powered-by");
