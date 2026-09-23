@@ -1,12 +1,19 @@
 services:
   n3d-catalog:
-    build: .
-    # Compose Manager builds this from the Dockerfile in this same folder,
-    # so clone/copy the whole repo onto the array (e.g.
-    # /mnt/user/appdata/n3d-catalog/src) before adding this stack — don't
-    # just drop this one file on its own. If you'd rather not build on the
-    # NAS, push an image to a registry and swap `build: .` for
+    # Points at an explicit path rather than "." on purpose — Compose
+    # Manager stores the stack file itself under
+    # /boot/config/plugins/compose.manager/projects/<name>/, which is NOT
+    # where you want the repo. Clone/copy the whole repo (Dockerfile, src/,
+    # public/, admin/, package.json, etc.) to the path below first — if
+    # "failed to read dockerfile: open Dockerfile: no such file or
+    # directory" shows up, that's what's missing: this path doesn't have
+    # the repo in it yet. Change the path here if you put it somewhere
+    # else. If you'd rather not build on the NAS at all, push an image to
+    # a registry and swap this whole `build:` block for
     # `image: yourregistry/n3d-catalog:latest`.
+    build:
+      context: /mnt/user/appdata/n3d-catalog/src
+      dockerfile: Dockerfile
     container_name: n3d-catalog
     restart: unless-stopped
     ports:

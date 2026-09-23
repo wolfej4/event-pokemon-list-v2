@@ -191,12 +191,18 @@ it gets a proper entry on the Docker tab.
 
 1. Install the **Compose Manager** (or **Docker Compose Manager**) plugin
    from Community Applications if you don't already have it.
-2. Copy this whole repo onto the array, e.g. to
-   `/mnt/user/appdata/n3d-catalog/src` — Compose Manager builds the image
-   from the `Dockerfile` there, it isn't pulling a prebuilt one.
-3. In Compose Manager, add a new stack pointed at that folder and use
-   `docker-compose.unraid.yml` as its compose file.
-4. Create a `.env` file next to it (same folder) with at minimum:
+2. Copy this whole repo (Dockerfile, `src/`, `public/`, `admin/`,
+   `package.json`, etc. — not just the compose file) onto the array at
+   **exactly** `/mnt/user/appdata/n3d-catalog/src`. `docker-compose.unraid.yml`
+   builds from that path — it isn't pulling a prebuilt image. If you'd
+   rather put the repo somewhere else, edit the `build.context` path in
+   `docker-compose.unraid.yml` to match.
+3. In Compose Manager, add a new stack (any name is fine — Compose Manager
+   keeps the stack file itself under its own plugin folder, separate from
+   the repo) and paste in the contents of `docker-compose.unraid.yml` as
+   its compose config.
+4. In that same stack, add a `.env` file (Compose Manager has a field for
+   this) with at minimum:
    ```
    N3D_API_KEY=...
    ADMIN_PASSWORD=...
@@ -208,6 +214,13 @@ it gets a proper entry on the Docker tab.
 5. Compose it up. First run creates `/mnt/user/appdata/n3d-catalog` if it
    doesn't already exist.
 6. Visit `http://<unraid-ip>:8090/admin`, log in, and run **Sync from N3D**.
+
+Getting `failed to solve: failed to read dockerfile: open Dockerfile: no
+such file or directory`? That means step 2 didn't happen — the build
+context path doesn't have the repo in it (a common mistake is uploading
+just the compose file on its own). Copy the full repo to
+`/mnt/user/appdata/n3d-catalog/src`, or update `build.context` in
+`docker-compose.unraid.yml` to wherever you actually put it.
 
 Leave `COOKIE_SECURE=false` (the default in that file) unless you're
 putting this behind HTTPS — see the callout above; it applies here too, and
