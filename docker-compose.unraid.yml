@@ -1,19 +1,17 @@
 services:
   n3d-catalog:
-    # Points at an explicit path rather than "." on purpose — Compose
-    # Manager stores the stack file itself under
-    # /boot/config/plugins/compose.manager/projects/<name>/, which is NOT
-    # where you want the repo. Clone/copy the whole repo (Dockerfile, src/,
-    # public/, admin/, package.json, etc.) to the path below first — if
-    # "failed to read dockerfile: open Dockerfile: no such file or
-    # directory" shows up, that's what's missing: this path doesn't have
-    # the repo in it yet. Change the path here if you put it somewhere
-    # else. If you'd rather not build on the NAS at all, push an image to
-    # a registry and swap this whole `build:` block for
-    # `image: yourregistry/n3d-catalog:latest`.
-    build:
-      context: /mnt/user/appdata/n3d-catalog/src
-      dockerfile: Dockerfile
+    # Pulls a ready-built image from GitHub Container Registry instead of
+    # building on the NAS — GitHub Actions (.github/workflows/docker-publish.yml)
+    # rebuilds and pushes this on every push to main. No repo/source tree
+    # needs to exist on Unraid at all, which sidesteps the whole class of
+    # "failed to read dockerfile: no such file or directory" build-context
+    # errors that come from a compose file trying to build without the
+    # repo actually being where it expects. If ghcr.io/wolfej4/event-pokemon-list
+    # is a private package, run `docker login ghcr.io` once on the Unraid
+    # terminal with a GitHub personal access token (read:packages scope)
+    # before composing this up — or make the package public from its
+    # Settings tab on GitHub so no login is needed.
+    image: ghcr.io/wolfej4/event-pokemon-list:latest
     container_name: n3d-catalog
     restart: unless-stopped
     ports:

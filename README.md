@@ -183,24 +183,28 @@ this exact cause if it happens.
 
 ### 2c. Deploy on Unraid
 
-Uses `docker-compose.unraid.yml` instead of the plain `docker-compose.yml` —
-same app, but with a bind mount into `/mnt/user/appdata` (instead of a named
-volume) so the data file shows up in Unraid's file manager and gets picked
-up by the CA Backup/Restore plugin automatically, plus WebUI/icon labels so
-it gets a proper entry on the Docker tab.
+Uses `docker-compose.unraid.yml`, which **pulls a ready-built image from
+GitHub Container Registry** (`ghcr.io/wolfej4/event-pokemon-list:latest`)
+instead of building on the NAS — no repo/source tree needs to exist on
+Unraid at all, so there's no build-context path to get wrong. GitHub
+Actions (`.github/workflows/docker-publish.yml`) rebuilds and pushes that
+image automatically on every push to `main`. It also uses a bind mount into
+`/mnt/user/appdata` (instead of a named volume) so the data file shows up
+in Unraid's file manager and gets picked up by the CA Backup/Restore plugin
+automatically, plus WebUI/icon labels so it gets a proper entry on the
+Docker tab.
 
 1. Install the **Compose Manager** (or **Docker Compose Manager**) plugin
    from Community Applications if you don't already have it.
-2. Copy this whole repo (Dockerfile, `src/`, `public/`, `admin/`,
-   `package.json`, etc. — not just the compose file) onto the array at
-   **exactly** `/mnt/user/appdata/n3d-catalog/src`. `docker-compose.unraid.yml`
-   builds from that path — it isn't pulling a prebuilt image. If you'd
-   rather put the repo somewhere else, edit the `build.context` path in
-   `docker-compose.unraid.yml` to match.
-3. In Compose Manager, add a new stack (any name is fine — Compose Manager
-   keeps the stack file itself under its own plugin folder, separate from
-   the repo) and paste in the contents of `docker-compose.unraid.yml` as
-   its compose config.
+2. If `ghcr.io/wolfej4/event-pokemon-list` is a private package (GHCR
+   packages default to private), either:
+   - make it public — on GitHub, go to the package's page (linked from the
+     repo's sidebar under "Packages") → **Package settings** → **Change
+     visibility** → Public, or
+   - run `docker login ghcr.io` once on the Unraid terminal with a GitHub
+     personal access token that has the `read:packages` scope.
+3. In Compose Manager, add a new stack (any name) and paste in the
+   contents of `docker-compose.unraid.yml` as its compose config.
 4. In that same stack, add a `.env` file (Compose Manager has a field for
    this) with at minimum:
    ```
@@ -211,16 +215,14 @@ it gets a proper entry on the Docker tab.
    Add the SMTP/Square variables the same way if you're using those — see
    `docker-compose.unraid.yml` for the full list; anything left out defaults
    to blank/disabled.
-5. Compose it up. First run creates `/mnt/user/appdata/n3d-catalog` if it
-   doesn't already exist.
+5. Compose it up — this pulls the image rather than building it. First run
+   creates `/mnt/user/appdata/n3d-catalog` if it doesn't already exist.
 6. Visit `http://<unraid-ip>:8090/admin`, log in, and run **Sync from N3D**.
 
-Getting `failed to solve: failed to read dockerfile: open Dockerfile: no
-such file or directory`? That means step 2 didn't happen — the build
-context path doesn't have the repo in it (a common mistake is uploading
-just the compose file on its own). Copy the full repo to
-`/mnt/user/appdata/n3d-catalog/src`, or update `build.context` in
-`docker-compose.unraid.yml` to wherever you actually put it.
+To pick up a newer image later (after a future update lands on `main`),
+re-pull and recreate the container — Compose Manager's **Update** button
+does this, or run `docker compose pull && docker compose up -d` from that
+stack's folder.
 
 Leave `COOKIE_SECURE=false` (the default in that file) unless you're
 putting this behind HTTPS — see the callout above; it applies here too, and
