@@ -56,10 +56,22 @@ function persist() {
   fs.writeFileSync(tmp, JSON.stringify(state, null, 2));
   fs.renameSync(tmp, DB_PATH);
 }
+let lastWriteError = null;
 function scheduleWrite() {
   if (timer) return;
-  timer = setTimeout(() => { timer = null; try { persist(); } catch (e) { console.error("[db] write failed:", e.message); } }, 150);
+  timer = setTimeout(() => {
+    timer = null;
+    try { persist(); lastWriteError = null; }
+    catch (e) { lastWriteError = e.message; console.error("[db] write failed:", e.message); }
+  }, 150);
 }
+// Checks the data folder is writable right now (used by the admin status check)
+function checkWritable() {
+  const probe = path.join(DATA_DIR, ".write-test");
+  try { ensureDir(); fs.writeFileSync(probe, "ok"); fs.unlinkSync(probe); return null; }
+  catch (e) { return e.message; }
+}
+const writeError = () => lastWriteError || checkWritable();
 function flushSync() {
   if (timer) { clearTimeout(timer); timer = null; }
   try { persist(); } catch (e) { console.error("[db] flush failed:", e.message); }
@@ -100,5 +112,5 @@ module.exports = {
   DATA_DIR,
   upsertDesign, getDesign, allDesigns,
   addQuote, updateQuote, getQuote, allQuotes,
-  getSettings, updateSettings, flushSync, DEFAULT_SETTINGS
+  getSettings, updateSettings, flushSync, writeError, DEFAULT_SETTINGS
 };

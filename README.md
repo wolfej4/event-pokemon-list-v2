@@ -65,6 +65,11 @@ Behind HTTPS (Nginx Proxy Manager, Traefik, Cloudflare Tunnel), set
 
 ## Notes
 
+- The container starts as root only long enough to make `/app/data` owned by the
+  app user, then runs the app unprivileged. This repairs volumes created by
+  older versions. If saving ever fails anyway (for example a read-only or NFS
+  mount), the admin panel shows a red warning with the fix.
+
 - Data (designs, prices, quotes, settings) lives in `/app/data/db.json` on the
   `n3d_catalog_data` volume. Back up that volume.
 - If SMTP isn't configured, quotes are still saved and the customer can still

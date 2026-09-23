@@ -18,6 +18,14 @@
   try { kiosk = localStorage.getItem(KIOSK_KEY) === "1"; } catch(e){}
   if (kiosk) document.body.classList.add("kiosk");
 
+  // muted versions of the mainline games' type colors, tuned to work on both themes
+  var TYPE_COLORS = {
+    normal:"#9AA1A1", fire:"#E68A3C", water:"#5B9BE0", electric:"#E6C846", grass:"#63BC63",
+    ice:"#79D0D0", fighting:"#C4534B", poison:"#9B57A6", ground:"#C9A25E",
+    flying:"#8FA8E6", psychic:"#E06E96", bug:"#9BBA3E", rock:"#B8A257", ghost:"#6E5896",
+    dragon:"#7460E0", dark:"#6E5C50", steel:"#8E9BAA", fairy:"#E390C9"
+  };
+  function typeColor(t){ return TYPE_COLORS[String(t || "").toLowerCase()] || "var(--accent)"; }
   function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
   function safeUrl(u){ return /^https?:\/\//i.test(u || "") ? u : ""; }
   function safeColor(c){ return /^#[0-9a-f]{3,8}$/i.test(c || "") ? c : "#888"; }
@@ -145,7 +153,9 @@
     var h = '<div class="media">' + (d.image_url ? '<img alt="' + esc(d.title) + '" src="' + esc(safeUrl(d.image_url)) + '">' : '') + spool(d) + '</div>';
     h += '<div class="info"><div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">' +
       '<h2 id="detail-title">' + esc(d.title) + '</h2><button type="button" class="btn ghost small" data-close>Close</button></div>';
-    if (p && p.types && p.types.length) h += '<div class="types">' + p.types.map(function(t){ return '<span>' + esc(t) + '</span>'; }).join("") + '</div>';
+    if (p && p.types && p.types.length) h += '<div class="types">' + p.types.map(function(t){
+      return '<span style="--t-color:' + typeColor(t) + '">' + esc(t) + '</span>';
+    }).join("") + '</div>';
     if (p && p.description) h += '<p class="flavor">' + esc(p.description) + '</p>';
     h += '<dl class="specs"><div><dt>Price</dt><dd>' + priceHtml(d) + '</dd></div>' +
       '<div><dt>Print time</dt><dd>' + esc(d.print_time || "\u2014") + '</dd></div>' +

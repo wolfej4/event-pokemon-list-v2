@@ -79,3 +79,8 @@ select.input{ appearance:auto; }
 .logo-preview.dark-bg .muted{ color:#6C7689; }
 .logo-slot .sub{ margin:2px 0 8px; font-size:.85rem; }
 label.btn{ cursor:pointer; }
+
+.alert{ background:color-mix(in srgb, var(--bad) 12%, var(--surface)); border:1px solid var(--bad); border-radius:12px; padding:14px 16px; margin-bottom:18px; }
+.alert[hidden]{ display:none; }
+.alert strong{ color:var(--bad); }
+.alert code{ display:inline-block; margin-top:6px; }

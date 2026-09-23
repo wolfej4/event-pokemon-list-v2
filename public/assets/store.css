@@ -77,7 +77,12 @@ main{ max-width:1200px; margin:0 auto; padding:8px clamp(16px, 4vw, 40px) 60px; 
 .dialog .info{ padding:24px; display:flex; flex-direction:column; gap:14px; }
 .dialog h2{ font-family:var(--display); font-weight:800; font-size:1.8rem; line-height:1.05; letter-spacing:-.02em; margin:0; }
 .types{ display:flex; gap:6px; flex-wrap:wrap; }
-.types span{ padding:3px 10px; border-radius:999px; background:var(--accent-soft); color:var(--accent); font-size:.78rem; font-weight:700; text-transform:capitalize; }
+.types span{
+  padding:3px 10px; border-radius:999px; font-size:.78rem; font-weight:700; text-transform:capitalize;
+  background:color-mix(in srgb, var(--t-color, var(--accent)) 18%, var(--surface));
+  color:color-mix(in srgb, var(--t-color, var(--accent)) 70%, var(--ink));
+  border:1px solid color-mix(in srgb, var(--t-color, var(--accent)) 35%, transparent);
+}
 .flavor{ color:var(--muted); margin:0; }
 .specs{ display:grid; grid-template-columns:repeat(3, 1fr); gap:1px; background:var(--line); border:1px solid var(--line); border-radius:12px; overflow:hidden; }
 .specs div{ background:var(--surface); padding:10px 12px; }

@@ -32,7 +32,8 @@ router.get("/status", (req, res) => {
     n3dKey: !!process.env.N3D_API_KEY,
     smtp: mailer.configured(),
     square: square.configured(),
-    squareEnv: process.env.SQUARE_ENV === "sandbox" ? "sandbox" : "production"
+    squareEnv: process.env.SQUARE_ENV === "sandbox" ? "sandbox" : "production",
+    storageError: db.writeError()
   });
 });
 
@@ -125,6 +126,9 @@ router.post("/logo/:variant", express.raw({ type: () => true, limit: "2mb" }), (
     const s = db.updateSettings({ logos });
     res.json({ ok: true, logo: logo.urls(s), logos: s.logos });
   } catch (e) {
+    if (e.code === "EACCES" || e.code === "EPERM") {
+      return res.status(500).json({ error: "The app can't write to its data folder. See the warning at the top of the admin panel." });
+    }
     res.status(400).json({ error: e.message });
   }
 });

@@ -42,7 +42,7 @@
   function boot(){
     Promise.all([api("/settings"), api("/status")]).then(function(r){
       settings = r[0]; status = r[1];
-      fillSettings(); fillPricing(); renderConn(); renderLogos();
+      fillSettings(); fillPricing(); renderConn(); renderLogos(); renderStorageAlert();
       if (settings.businessName) $("bar-title").textContent = settings.businessName + " admin";
       return loadDesigns();
     }).catch(function(e){ setStatus($("sync-status"), e.message, "bad"); });
@@ -198,6 +198,15 @@
     api("/smtp/test", { method:"POST" }).then(function(){ setStatus($("conn-status"), "Mail server accepted the login.", "ok"); })
       .catch(function(e){ setStatus($("conn-status"), e.message, "bad"); });
   });
+
+  function renderStorageAlert(){
+    var a = $("storage-alert");
+    a.hidden = !status.storageError;
+    if (!status.storageError) return;
+    a.innerHTML = '<strong>Changes aren\u2019t being saved to disk.</strong> The app can\u2019t write to <code>/app/data</code> (' + esc(status.storageError) +
+      '). Anything you change now will be lost when the container restarts. Run this on the Docker host, then click Save settings once:<br>' +
+      '<code>docker exec -u root n3d-catalog chown -R node:node /app/data</code>';
+  }
 
   // ---------- logo ----------
   function renderLogos(){
