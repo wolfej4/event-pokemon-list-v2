@@ -40,9 +40,9 @@
     var t = $("toast"); t.textContent = msg; t.hidden = false;
     clearTimeout(toast._t); toast._t = setTimeout(function(){ t.hidden = true; }, ms || 1800);
   }
-  // Square sends customers back here with ?paid=<quote id> after checkout
+  // Square sends customers back here with ?paid=<order id> after checkout
   if (params.get("paid")) {
-    toast("Thanks! Your payment for " + params.get("paid") + " went through. A receipt is on its way.", 6000);
+    toast("Thanks! Order " + params.get("paid") + " is paid. Square is emailing your receipt.", 6000);
     try { params.delete("paid"); history.replaceState(null, "", location.pathname + (params.toString() ? "?" + params : "")); } catch(e){}
   }
 
@@ -60,7 +60,7 @@
     applyLogo(settings.logo, settings.logoShowName);
     $("hero-title").textContent = name;
     $("hero-tagline").textContent = settings.tagline || "";
-    $("site-footer").textContent = "Prices marked \u201cest.\u201d are estimates based on filament and print time. Every quote is confirmed by email before printing.";
+    $("site-footer").textContent = "Every design is 3D printed to order. Prices include tax.";
     for (var k in cart) if (!bySlug[k]) delete cart[k];
     saveCart();
     render();
@@ -109,7 +109,7 @@
   }
 
   function priceHtml(d){
-    return esc(d.price) + (d.price_is_estimate ? ' <small>est.</small>' : '');
+    return esc(d.price);
   }
 
   function render(){
@@ -171,8 +171,7 @@
           '<span class="g">' + (f.weight_grams ? Math.round(f.weight_grams) + " g" : "") + '</span></li>';
       }).join("") + '</ul>';
     }
-    if (d.price_is_estimate) h += '<p class="estimate-note">Estimated from filament and print time. We confirm the final price before printing.</p>';
-    h += '<div class="actions"><button type="button" class="btn primary" data-detail-add="' + esc(d.slug) + '">Add to quote</button>';
+    h += '<div class="actions"><button type="button" class="btn primary" data-detail-add="' + esc(d.slug) + '">Add to cart</button>';
     if (d.shop_url && !kiosk && safeUrl(d.shop_url)) h += '<a class="btn" href="' + esc(safeUrl(d.shop_url)) + '" target="_blank" rel="noopener">Buy online</a>';
     h += '</div></div>';
     $("detail-body").innerHTML = h;
@@ -185,7 +184,7 @@
     if (a){ addToCart(a.dataset.detailAdd); closeOverlay(this); }
   });
 
-  // ---------- quote drawer ----------
+  // ---------- cart and checkout ----------
   var form = { name:"", email:"", phone:"", notes:"", fulfillment:"" };
   $("open-quote").addEventListener("click", openDrawer);
   $("close-drawer").addEventListener("click", function(){ closeOverlay($("drawer")); });
@@ -198,47 +197,59 @@
 
   function openDrawer(){ renderDrawer(); openOverlay($("drawer")); $("close-drawer").focus(); }
 
+  function cartTotal(){
+    var t = 0; for (var k in cart) if (bySlug[k]) t += bySlug[k].price_cents * cart[k]; return t;
+  }
+  function shipCents(){ return form.fulfillment === "ship" ? (settings.shippingCents || 0) : 0; }
+  function checkoutLabel(){ return settings.payOnline ? "Continue to payment" : "Place order"; }
+
   function renderDrawer(){
     var slugs = Object.keys(cart).filter(function(s){ return bySlug[s]; });
     var c = $("drawer-content");
     if (!slugs.length){
-      c.innerHTML = '<div class="success"><h3>No designs yet</h3><p>Add designs from the catalog and they\u2019ll show up here with an estimated total.</p>' +
+      c.innerHTML = '<div class="success"><h3>Your cart is empty</h3><p>Add designs from the catalog and they’ll show up here.</p>' +
         '<button type="button" class="btn primary" id="browse">Browse designs</button></div>';
       $("browse").onclick = function(){ closeOverlay($("drawer")); };
       return;
     }
-    var total = 0, anyEst = false;
     var lines = slugs.map(function(s){
-      var d = bySlug[s], q = cart[s]; total += d.price_cents * q; if (d.price_is_estimate) anyEst = true;
+      var d = bySlug[s], q = cart[s];
       return '<div class="line"><img alt="" src="' + esc(safeUrl(d.image_url)) + '">' +
         '<div><div class="t">' + esc(d.title) + '</div><div class="u">' + priceHtml(d) + ' each</div>' +
         '<button type="button" class="remove" data-remove="' + esc(s) + '">Remove</button></div>' +
-        '<div class="qty"><button type="button" data-dec="' + esc(s) + '" aria-label="Decrease quantity">\u2212</button><span>' + q +
+        '<div class="qty"><button type="button" data-dec="' + esc(s) + '" aria-label="Decrease quantity">−</button><span>' + q +
         '</span><button type="button" data-inc="' + esc(s) + '" aria-label="Increase quantity">+</button></div></div>';
     }).join("");
-    var ship = form.fulfillment === "ship", shipCents = settings.shippingCents || 0;
+    var sc = settings.shippingCents || 0;
     c.innerHTML = lines +
-      '<fieldset class="fulfill"><legend>How do you want to get it?</legend>' +
-      '<label><input type="radio" name="fulfillment" value="ship"' + (ship ? " checked" : "") + '> Ship it to me <span class="muted">(' + (shipCents ? money(shipCents) : "free") + ')</span></label>' +
+      '<div class="subline"><span>Subtotal</span><span id="sum-sub">' + money(cartTotal()) + '</span></div>' +
+      '<form id="checkout-form" novalidate>' +
+      '<fieldset class="fulfill" id="fulfill"><legend>How do you want to get it?</legend>' +
+      '<label><input type="radio" name="fulfillment" value="ship"' + (form.fulfillment === "ship" ? " checked" : "") + '> Ship it to me <span class="muted">(' + (sc ? money(sc) : "free") + ')</span></label>' +
       '<label><input type="radio" name="fulfillment" value="pickup"' + (form.fulfillment === "pickup" ? " checked" : "") + '> Local pickup <span class="muted">(free)</span></label></fieldset>' +
-      (ship && shipCents ? '<div class="subline"><span>Shipping</span><span>' + money(shipCents) + '</span></div>' : '') +
-      '<div class="total"><span>Estimated total</span><span class="v">' + money(total + (ship ? shipCents : 0)) + '</span></div>' +
-      '<p class="fine">' + (anyEst ? "Includes estimated prices. " : "") + 'We\u2019ll email you a PDF of this estimate' + (kiosk ? '.' : ' and send a copy to our team.') + '</p>' +
-      '<form id="quote-form" novalidate>' +
       '<div class="field"><label for="q-name">Name</label><input id="q-name" name="name" autocomplete="name" required value="' + esc(form.name) + '"></div>' +
       '<div class="field"><label for="q-email">Email</label><input id="q-email" name="email" type="email" autocomplete="email" required value="' + esc(form.email) + '"></div>' +
       '<div class="field"><label for="q-phone">Phone (optional)</label><input id="q-phone" name="phone" type="tel" autocomplete="tel" value="' + esc(form.phone) + '"></div>' +
-      '<div class="field"><label for="q-notes">Notes (optional)</label><textarea id="q-notes" name="notes" placeholder="Color changes, size, pickup date">' + esc(form.notes) + '</textarea></div>' +
+      '<div class="field"><label for="q-notes">Notes (optional)</label><textarea id="q-notes" name="notes" placeholder="Color requests, pickup date">' + esc(form.notes) + '</textarea></div>' +
       '<input class="hp" name="website" tabindex="-1" autocomplete="off" aria-hidden="true">' +
+      '<div class="subline" id="ship-line"' + (shipCents() ? '' : ' hidden') + '><span>Shipping</span><span>' + money(sc) + '</span></div>' +
+      '<div class="total"><span>Total</span><span class="v" id="sum-total">' + money(cartTotal() + shipCents()) + '</span></div>' +
       '<div class="form-error" id="form-error" role="alert"></div>' +
-      '<button class="btn primary" style="width:100%;padding:13px" type="submit" id="send-quote">Email my estimate</button></form>';
+      '<button class="btn primary" style="width:100%;padding:13px" type="submit" id="checkout">' + checkoutLabel() + '</button>' +
+      (settings.payOnline ? '<p class="fine" style="margin-top:10px;text-align:center">Secure checkout by Square.' + (form.fulfillment === "ship" ? ' You’ll enter your shipping address there.' : '') + '</p>' : '') +
+      '</form>';
+  }
+  function updateTotals(){
+    $("ship-line").hidden = !shipCents();
+    $("sum-total").textContent = money(cartTotal() + shipCents());
+    $("fulfill").classList.remove("invalid");
   }
 
   $("drawer-content").addEventListener("input", function(e){ if (e.target.name in form) form[e.target.name] = e.target.value; });
   $("drawer-content").addEventListener("change", function(e){
     if (e.target.name !== "fulfillment") return;
-    form.fulfillment = e.target.value; renderDrawer();
-    var r = $("drawer-content").querySelector('input[name="fulfillment"]:checked'); if (r) r.focus();
+    form.fulfillment = e.target.value; updateTotals();
+    if ($("form-error").textContent === "Choose shipping or local pickup.") $("form-error").textContent = "";
   });
   $("drawer-content").addEventListener("click", function(e){
     var b;
@@ -250,12 +261,17 @@
   });
   $("drawer-content").addEventListener("submit", function(e){
     e.preventDefault();
-    var f = e.target, err = $("form-error"), btn = $("send-quote");
+    var f = e.target, err = $("form-error"), btn = $("checkout");
     err.textContent = "";
+    if (!form.fulfillment) {
+      err.textContent = "Choose shipping or local pickup.";
+      $("fulfill").classList.add("invalid");
+      $("fulfill").scrollIntoView({ behavior:"smooth", block:"center" });
+      return f.querySelector('input[name="fulfillment"]').focus({ preventScroll:true });
+    }
     if (!form.name.trim()) { err.textContent = "Enter your name."; return f.name.focus(); }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) { err.textContent = "Enter a valid email address."; return f.email.focus(); }
-    if (!form.fulfillment) { err.textContent = "Choose shipping or local pickup."; return f.querySelector('input[name="fulfillment"]').focus(); }
-    btn.disabled = true; btn.textContent = "Sending\u2026";
+    btn.disabled = true; btn.textContent = "Placing order…";
     fetch("/api/public/quotes", {
       method:"POST", headers:{ "Content-Type":"application/json" },
       body: JSON.stringify({
@@ -265,21 +281,25 @@
       })
     }).then(function(r){ return r.json().then(function(j){ return { ok:r.ok, j:j }; }); })
       .then(function(res){
-        if (!res.ok) throw new Error(res.j.error || "The quote didn't send. Try again.");
+        if (!res.ok) throw new Error(res.j.error || "Your order didn’t go through. Try again.");
         cart = {}; saveCart(); render();
         form = { name:"", email:"", phone:"", notes:"", fulfillment:"" };
         var j = res.j, pay = safeUrl(j.pay_url);
-        var payHtml = !pay ? '' : kiosk && j.pay_qr
-          ? '<div class="pay-qr"><div class="qr">' + j.pay_qr + '</div><p><strong>Scan with your phone to pay now.</strong><br>The payment link is in your email too.</p></div>'
-          : '<p><a class="btn primary pay" href="' + esc(pay) + '" rel="noopener">Pay ' + esc(j.total) + ' now</a></p>';
-        $("drawer-content").innerHTML = '<div class="success"><h3>Estimate ' + esc(j.id) + ' sent</h3>' +
-          '<p>' + (j.emailed ? "We emailed your PDF estimate. Check your inbox (and spam folder)." : "Your request is saved. We\u2019ll email you the estimate shortly.") +
-          ' Estimated total: <strong>' + esc(j.total) + '</strong>.</p>' + payHtml +
-          (kiosk ? '' : '<a class="btn" href="' + esc(j.pdf_url) + '" target="_blank" rel="noopener">Open PDF</a>') +
-          '<button type="button" class="btn' + (pay ? '' : ' primary') + '" id="new-quote">Start a new quote</button></div>';
-        $("new-quote").onclick = function(){ closeOverlay($("drawer")); };
+        // on their own device, go straight to Square's checkout
+        if (pay && !kiosk) {
+          $("drawer-content").innerHTML = '<div class="success"><h3>Taking you to checkout…</h3>' +
+            '<p>Order ' + esc(j.id) + ', ' + esc(j.total) + '.</p><a class="btn primary pay" href="' + esc(pay) + '">Continue to payment</a></div>';
+          location.href = pay;
+          return;
+        }
+        var body = pay
+          ? '<div class="pay-qr"><div class="qr">' + (j.pay_qr || "") + '</div><p><strong>Scan with your phone to pay ' + esc(j.total) + '.</strong>' + (j.emailed ? '<br>We also emailed you the payment link.' : '') + '</p></div>'
+          : '<p>Total: <strong>' + esc(j.total) + '</strong>. ' + (j.emailed ? "We emailed you a confirmation." : "") + ' We’ll be in touch about payment.</p>';
+        $("drawer-content").innerHTML = '<div class="success"><h3>Order ' + esc(j.id) + ' placed</h3>' + body +
+          '<button type="button" class="btn' + (pay ? '' : ' primary') + '" id="new-order">' + (kiosk ? "Done" : "Keep shopping") + '</button></div>';
+        $("new-order").onclick = function(){ closeOverlay($("drawer")); };
       })
-      .catch(function(ex){ err.textContent = ex.message; btn.disabled = false; btn.textContent = "Email my estimate"; });
+      .catch(function(ex){ err.textContent = ex.message; btn.disabled = false; btn.textContent = checkoutLabel(); });
   });
 
   // ---------- kiosk idle reset ----------

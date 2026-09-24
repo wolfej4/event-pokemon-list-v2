@@ -48,7 +48,7 @@ function itemLines(q, cur) {
   return lines.join("\n");
 }
 const payLine = (q) => q.payment && q.payment.url && q.payment.status !== "paid"
-  ? `\n\nPay online: ${q.payment.url}${q.fulfillment === "ship" ? "\nYou'll enter your shipping address at checkout." : ""}` : "";
+  ? `\n\nIf you haven't paid yet, you can pay here: ${q.payment.url}${q.fulfillment === "ship" ? "\nYou'll enter your shipping address at checkout." : ""}` : "";
 
 // Sends the customer copy and the business copy. Returns {customer, business} status strings.
 async function sendQuoteEmails(q, pdf, settings) {
@@ -56,7 +56,7 @@ async function sendQuoteEmails(q, pdf, settings) {
   if (!t) return { customer: "skipped: SMTP not configured", business: "skipped: SMTP not configured" };
   const cur = settings.currency || "USD";
   const shop = settings.businessName || "Our shop";
-  const attachment = { filename: `estimate-${q.id}.pdf`, content: pdf, contentType: "application/pdf" };
+  const attachment = { filename: `order-${q.id}.pdf`, content: pdf, contentType: "application/pdf" };
   const result = {};
 
   try {
@@ -64,8 +64,8 @@ async function sendQuoteEmails(q, pdf, settings) {
       from: config().from,
       to: q.customer.email,
       replyTo: settings.businessEmail || undefined,
-      subject: `Your print estimate ${q.id} from ${shop}`,
-      text: `Hi ${q.customer.name},\n\nThanks for your request. Your estimate is attached.\n\n${itemLines(q, cur)}\n\nEstimated total: ${fmt(q.total_cents, cur)}${payLine(q)}\n\nReply to this email with any questions or to confirm your order.\n\n${shop}`,
+      subject: `Your order ${q.id} from ${shop}`,
+      text: `Hi ${q.customer.name},\n\nThanks for your order! A summary is attached.\n\n${itemLines(q, cur)}\n\nTotal: ${fmt(q.total_cents, cur)}${payLine(q)}\n\n${q.fulfillment === "pickup" ? "We'll email you when it's ready for pickup." : "We'll email you when it ships."} Reply to this email with any questions.\n\n${shop}`,
       attachments: [attachment]
     });
     result.customer = "sent";
@@ -77,8 +77,8 @@ async function sendQuoteEmails(q, pdf, settings) {
         from: config().from,
         to: settings.businessEmail,
         replyTo: q.customer.email,
-        subject: `New quote request ${q.id} — ${q.customer.name} (${fmt(q.total_cents, cur)})`,
-        text: `New quote request.\n\nName: ${q.customer.name}\nEmail: ${q.customer.email}\nPhone: ${q.customer.phone || "—"}\nSource: ${q.source}\nDelivery: ${q.fulfillment === "ship" ? "ship" : q.fulfillment === "pickup" ? "local pickup" : "—"}\n\n${itemLines(q, cur)}\n\nEstimated total: ${fmt(q.total_cents, cur)}\n\nNotes:\n${q.customer.notes || "—"}`,
+        subject: `New order ${q.id} — ${q.customer.name} (${fmt(q.total_cents, cur)})`,
+        text: `New order.\n\nName: ${q.customer.name}\nEmail: ${q.customer.email}\nPhone: ${q.customer.phone || "—"}\nSource: ${q.source}\nDelivery: ${q.fulfillment === "ship" ? "ship" : q.fulfillment === "pickup" ? "local pickup" : "—"}\n\n${itemLines(q, cur)}\n\nTotal: ${fmt(q.total_cents, cur)}${q.payment && q.payment.url ? "\nPayment link: " + q.payment.url : ""}\n\nNotes:\n${q.customer.notes || "—"}`,
         attachments: [attachment]
       });
       result.business = "sent";

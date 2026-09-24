@@ -216,7 +216,7 @@
     $("smtp-clear").hidden = !saved;
     $("smtp-source").textContent = saved ? "Using the settings below."
       : status.smtp ? "Currently using the SMTP_* environment variables. Save settings here to replace them."
-      : "Not set up yet. Quotes are still saved, but not emailed.";
+      : "Not set up yet. Orders are still saved, but no emails go out.";
   }
   function refreshStatus(){ return api("/status").then(function(s){ status = s; renderConn(); fillSmtp(); }); }
   $("smtp-form").addEventListener("submit", function(e){
@@ -279,7 +279,7 @@
       .then(function(j){
         settings.logos = j.logos; renderLogos();
         var pdfOk = (j.logos.light && /png|jpg/.test(j.logos.light.ext)) || (j.logos.dark && /png|jpg/.test(j.logos.dark.ext));
-        setStatus($("logo-status"), "Logo saved." + (pdfOk ? "" : " Upload a PNG or JPG version too if you want it on quote PDFs."), "ok");
+        setStatus($("logo-status"), "Logo saved." + (pdfOk ? "" : " Upload a PNG or JPG version too if you want it on order PDFs."), "ok");
       })
       .catch(function(err){ setStatus($("logo-status"), err.message, "bad"); });
   });
@@ -295,13 +295,13 @@
       .then(function(s){ settings = s; setStatus($("logo-status"), "Saved.", "ok"); });
   });
 
-  // ---------- quotes ----------
+  // ---------- orders ----------
   function loadQuotes(){
     api("/quotes").then(function(r){
       var list = r.data || [];
       $("quote-pay-error").hidden = !r.paymentError;
       $("quote-pay-error").textContent = r.paymentError ? "Couldn\u2019t check payments with Square: " + r.paymentError : "";
-      $("quote-summary").textContent = list.length ? list.length + " requests, " + list.filter(function(q){ return q.status === "new"; }).length + " new" : "No quote requests yet.";
+      $("quote-summary").textContent = list.length ? list.length + " orders, " + list.filter(function(q){ return q.status === "new"; }).length + " new" : "No orders yet.";
       $("quote-rows").innerHTML = list.map(function(q){
         var em = q.email || {};
         var emailPill = em.customer === "sent" ? '<span class="pill ok">Sent</span>' :
@@ -312,7 +312,7 @@
           '<td class="dm" style="max-width:260px">' + q.items.map(function(i){ return esc(i.qty + "× " + i.title); }).join("<br>") + '</td>' +
           '<td><strong>' + esc(q.total) + '</strong><div class="dm">' + (q.fulfillment === "ship" ? "Ship" : q.fulfillment === "pickup" ? "Pickup" : "") + '</div></td><td>' + emailPill + '</td>' +
           '<td>' + payCell(q) + '</td>' +
-          '<td><select class="input q-status" aria-label="Status">' + ["new","contacted","won","lost"].map(function(s){
+          '<td><select class="input q-status" aria-label="Status">' + ORDER_STATUSES.concat(ORDER_STATUSES.indexOf(q.status) < 0 ? [q.status] : []).map(function(s){
             return '<option' + (s === q.status ? " selected" : "") + '>' + s + '</option>'; }).join("") + '</select></td>' +
           '<td><div class="cell-actions"><a class="btn small" target="_blank" rel="noopener" href="/api/admin/quotes/' + encodeURIComponent(q.id) + '/pdf">PDF</a>' +
           '<button class="btn ghost small" data-resend type="button">Resend</button><span class="saved"></span></div></td></tr>';
@@ -324,6 +324,7 @@
     var id = e.target.closest("tr").dataset.id;
     api("/quotes/" + encodeURIComponent(id), { method:"POST", body:{ status: e.target.value } });
   });
+  var ORDER_STATUSES = ["new","printing","ready","shipped","completed","cancelled"];
   function payCell(q){
     var p = q.payment;
     if (p && p.status === "paid") return '<span class="pill ok">Paid</span>' + (p.ship_to ? '<div class="dm ship-to">' + esc(p.ship_to).replace(/\n/g, "<br>") + '</div>' : '');

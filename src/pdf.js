@@ -6,7 +6,7 @@ const logo = require("./logo");
 // Builds the quote PDF and resolves with a Buffer.
 function buildQuotePdf(quote, settings) {
   return new Promise((resolve, reject) => {
-    const doc = new PDFDocument({ size: "LETTER", margin: 50, info: { Title: "Quote " + quote.id } });
+    const doc = new PDFDocument({ size: "LETTER", margin: 50, info: { Title: "Order " + quote.id } });
     const chunks = [];
     doc.on("data", c => chunks.push(c));
     doc.on("end", () => resolve(Buffer.concat(chunks)));
@@ -26,7 +26,7 @@ function buildQuotePdf(quote, settings) {
     }
     if (!img || settings.logoShowName !== false || hy === 50) {
       doc.fillColor("#111827").font("Helvetica-Bold").fontSize(img && hy > 50 ? 13 : 20)
-        .text(settings.businessName || "Print quote", L, hy, { width: W / 2 });
+        .text(settings.businessName || "Order summary", L, hy, { width: W / 2 });
     } else {
       doc.y = hy;
     }
@@ -34,7 +34,7 @@ function buildQuotePdf(quote, settings) {
     const contact = [settings.businessEmail, settings.businessPhone].filter(Boolean).join("   ");
     if (contact) doc.text(contact, L, doc.y, { width: W / 2 });
     const headerBottom = doc.y;
-    doc.font("Helvetica-Bold").fontSize(11).fillColor(accent).text("Estimate " + quote.id, L, 50, { width: W, align: "right" });
+    doc.font("Helvetica-Bold").fontSize(11).fillColor(accent).text("Order " + quote.id, L, 50, { width: W, align: "right" });
     doc.font("Helvetica").fontSize(9).fillColor(muted).text(date, { width: W, align: "right" });
 
     const rule = Math.max(100, headerBottom + 12);
@@ -42,7 +42,7 @@ function buildQuotePdf(quote, settings) {
 
     // customer
     let y = rule + 15;
-    doc.fillColor(muted).fontSize(9).text("Prepared for", L, y);
+    doc.fillColor(muted).fontSize(9).text("Customer", L, y);
     doc.fillColor("#111827").fontSize(11).font("Helvetica-Bold").text(quote.customer.name, L, y + 13);
     doc.font("Helvetica").fontSize(9.5).fillColor("#374151");
     const lines = [quote.customer.email, quote.customer.phone].filter(Boolean);
@@ -86,7 +86,7 @@ function buildQuotePdf(quote, settings) {
       y += 20;
     }
     doc.font("Helvetica-Bold").fontSize(12).fillColor("#111827")
-      .text("Estimated total", L + 250, y, { width: 170, align: "right" })
+      .text("Total", L + 250, y, { width: 170, align: "right" })
       .text(fmt(quote.total_cents, cur), L + 420, y, { width: W - 426, align: "right" });
     y += 30;
 
