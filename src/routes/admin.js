@@ -11,6 +11,7 @@ const { buildQuotePdf } = require("../pdf");
 const { checkPassword, requireAdmin } = require("../auth");
 const rateLimit = require("../rateLimit");
 const logo = require("../logo");
+const payments = require("../payments");
 
 const router = express.Router();
 
@@ -33,8 +34,9 @@ router.get("/status", (req, res) => {
   res.json({
     n3dKey: !!process.env.N3D_API_KEY,
     smtp: mailer.configured(),
+    smtpSource: mailer.config().source,
     square: square.configured(),
-    squareEnv: process.env.SQUARE_ENV === "sandbox" ? "sandbox" : "production",
+    squareEnv: square.isSandbox() ? "sandbox" : "production",
     spoolman: spoolman.configured(),
     storageError: db.writeError()
   });
@@ -96,7 +98,29 @@ router.post("/designs-bulk", (req, res) => {
 });
 
 // ---------- settings ----------
-router.get("/settings", (req, res) => res.json(db.getSettings()));
+// never send the saved SMTP password back to the browser
+function publicSettings(s) {
+  const smtp = s.smtp || {};
+  return Object.assign({}, s, { smtp: Object.assign({}, smtp, { pass: undefined, passSet: !!smtp.pass }) });
+}
+router.get("/settings", (req, res) => res.json(publicSettings(db.getSettings())));
+
+router.post("/smtp", (req, res) => {
+  const b = req.body || {};
+  if (b.clear) return res.json(publicSettings(db.updateSettings({ smtp: {} })));
+  const prev = db.getSettings().smtp || {};
+  const str = (v) => String(v == null ? "" : v).trim().slice(0, 500);
+  const smtp = { host: str(b.host), user: str(b.user), from: str(b.from) };
+  if (!smtp.host) return res.status(400).json({ error: "Enter the mail server host." });
+  if (!smtp.from) return res.status(400).json({ error: "Enter the From address." });
+  const port = parseInt(b.port, 10);
+  if (!(port >= 1 && port <= 65535)) return res.status(400).json({ error: "Port must be a number between 1 and 65535." });
+  smtp.port = port;
+  smtp.secure = b.secure === true || b.secure === "true" ? true : b.secure === false || b.secure === "false" ? false : null;
+  // a blank password keeps the saved one; clearPass removes it
+  smtp.pass = b.clearPass ? "" : (b.pass ? String(b.pass).slice(0, 500) : (prev.pass || ""));
+  res.json(publicSettings(db.updateSettings({ smtp })));
+});
 
 router.post("/settings", (req, res) => {
   const b = req.body || {};
@@ -108,6 +132,8 @@ router.post("/settings", (req, res) => {
   if (b.kioskIdleSeconds !== undefined) u.kioskIdleSeconds = Math.min(3600, Math.max(15, parseInt(b.kioskIdleSeconds, 10) || 90));
   if (b.squareOverwritePrices !== undefined) u.squareOverwritePrices = !!b.squareOverwritePrices;
   if (b.logoShowName !== undefined) u.logoShowName = !!b.logoShowName;
+  if (b.squarePaymentLinks !== undefined) u.squarePaymentLinks = !!b.squarePaymentLinks;
+  if (b.squareLocationId !== undefined) u.squareLocationId = String(b.squareLocationId || "").trim().slice(0, 64);
   if (b.spoolmanLowStockGrams !== undefined) {
     const n = Number(b.spoolmanLowStockGrams);
     if (!Number.isFinite(n) || n < 0) return res.status(400).json({ error: "Low-stock threshold must be 0 or more." });
@@ -120,14 +146,14 @@ router.post("/settings", (req, res) => {
   }
   if (b.pricing) {
     u.pricing = {};
-    for (const k of ["baseFee", "perGram", "perHour", "markupPct", "minPrice", "roundTo"]) {
+    for (const k of ["baseFee", "perGram", "perHour", "markupPct", "minPrice", "roundTo", "shipping"]) {
       if (b.pricing[k] === undefined) continue;
       const n = Number(b.pricing[k]);
       if (!Number.isFinite(n) || n < 0) return res.status(400).json({ error: `Pricing value "${k}" must be 0 or more.` });
       u.pricing[k] = n;
     }
   }
-  res.json(db.updateSettings(u));
+  res.json(publicSettings(db.updateSettings(u)));
 });
 
 // ---------- logo ----------
@@ -198,9 +224,25 @@ router.get("/n3d/check", async (req, res) => {
 });
 
 // ---------- quotes ----------
-router.get("/quotes", (req, res) => {
+router.get("/quotes", async (req, res) => {
+  // check Square for newly paid links; a Square outage shouldn't hide the list
+  let paymentError = null;
+  if (square.configured()) {
+    try { await payments.refreshStatuses(db.allQuotes().slice(0, 300)); }
+    catch (e) { paymentError = e.message; }
+  }
   const cur = db.getSettings().currency;
-  res.json({ data: db.allQuotes().map(q => Object.assign({}, q, { total: fmt(q.total_cents, cur), token: undefined })) });
+  res.json({ paymentError, data: db.allQuotes().map(q => Object.assign({}, q, { total: fmt(q.total_cents, cur), token: undefined })) });
+});
+
+router.post("/quotes/:id/payment-link", async (req, res) => {
+  const q = db.getQuote(req.params.id);
+  if (!q) return res.status(404).json({ error: "not_found" });
+  if (!square.configured()) return res.status(400).json({ error: "SQUARE_ACCESS_TOKEN isn't set." });
+  if (q.payment && q.payment.url) return res.json({ ok: true, payment: q.payment });
+  const saved = await payments.attachLink(q, req);
+  if (saved.payment.error) return res.status(502).json({ error: saved.payment.error });
+  res.json({ ok: true, payment: saved.payment });
 });
 
 router.post("/quotes/:id", (req, res) => {
@@ -235,11 +277,13 @@ function csvCell(v) {
   return /[",\n]/.test(safe) ? '"' + safe.replace(/"/g, '""') + '"' : safe;
 }
 router.get("/quotes.csv", (req, res) => {
-  const rows = [["id", "created_at", "status", "source", "name", "email", "phone", "items", "total", "notes", "customer_email", "business_email"]];
+  const rows = [["id", "created_at", "status", "source", "name", "email", "phone", "items", "total", "notes", "customer_email", "business_email", "delivery", "shipping", "payment", "ship_to"]];
   for (const q of db.allQuotes()) {
     rows.push([q.id, q.created_at, q.status, q.source, q.customer.name, q.customer.email, q.customer.phone,
       q.items.map(i => `${i.qty}x ${i.title}`).join("; "), (q.total_cents / 100).toFixed(2), q.customer.notes,
-      q.email && q.email.customer, q.email && q.email.business]);
+      q.email && q.email.customer, q.email && q.email.business,
+      q.fulfillment || "", q.shipping_cents != null ? (q.shipping_cents / 100).toFixed(2) : "",
+      q.payment ? (q.payment.status || "error") : "", q.payment && q.payment.ship_to]);
   }
   res.setHeader("Content-Type", "text/csv");
   res.setHeader("Content-Disposition", 'attachment; filename="quotes.csv"');

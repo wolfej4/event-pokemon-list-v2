@@ -21,14 +21,18 @@ const DEFAULT_SETTINGS = {
     perHour: 1.50,        // $ per hour of print time
     markupPct: 0,         // % added on top
     minPrice: 5.00,       // floor per item
-    roundTo: 1.00         // round up to nearest $X (0 = no rounding)
+    roundTo: 1.00,        // round up to nearest $X (0 = no rounding)
+    shipping: 5.00        // flat $ per order when the customer picks shipping
   },
   squareOverwritePrices: true, // re-push replaces the price in Square
+  squarePaymentLinks: false,   // attach a Square checkout link to each new quote
+  squareLocationId: "",        // blank = SQUARE_LOCATION_ID env, else the first active location
   spoolmanLowStockGrams: 250,  // flag a color as low when matched stock falls below this
   spoolmanMatchThreshold: 60,  // max RGB distance (0-441) to call a design color "in stock"
   kioskIdleSeconds: 90,
   logos: {},             // { light: {ext,type,v}, dark: {...} } files live in DATA_DIR
   logoShowName: true,    // show business name next to the logo
+  smtp: {},              // { host, port, secure, user, pass, from } — overrides SMTP_* env vars when host is set
   lastCursor: null
 };
 

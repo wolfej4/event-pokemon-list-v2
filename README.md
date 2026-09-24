@@ -37,7 +37,7 @@ panel for pricing, N3D sync, and pushing to Square. Light and dark mode on both.
   and match sensitivity are both adjustable). Run it on demand with **Check stock
   now** — it's not automatic, since Spoolman weights only update as you print.
 - **Logo:** upload under Settings. Optional second version for dark mode. Shown in
-  the store header, admin bar, browser tab, and on quote PDFs (PNG/JPG only for
+  the store header, admin bar, and on quote PDFs (PNG/JPG only for
   the PDF). Stored on the data volume, so no rebuild is needed to change it.
 
 **Kiosk mode** for a booth tablet: open `/?kiosk=1` once on that device. Hides
@@ -49,7 +49,8 @@ timeout. `/?kiosk=0` turns it off.
 1. Push this folder to a Git repo (recommended) or upload it to the Docker host.
 2. Portainer → Stacks → Add stack → Repository (or Upload) with `docker-compose.yml`.
 3. Add the environment variables from `.env.example`. At minimum:
-   `N3D_API_KEY`, `ADMIN_PASSWORD`, `SESSION_SECRET`, and the `SMTP_*` values.
+   `N3D_API_KEY`, `ADMIN_PASSWORD`, and `SESSION_SECRET`. Email can be set with the
+   `SMTP_*` values or later in the admin Settings tab.
    Add `SQUARE_ACCESS_TOKEN` for Square (try `SQUARE_ENV=sandbox` with a sandbox
    token first).
 4. Deploy, open `http://<host>:8090/admin`, log in, and click **Sync from N3D**.
@@ -81,8 +82,20 @@ Behind HTTPS (Nginx Proxy Manager, Traefik, Cloudflare Tunnel), set
 - If SMTP isn't configured, quotes are still saved and the customer can still
   open their PDF; the Quotes tab shows the email as not sent, and you can
   resend once SMTP works.
+- Email settings saved in admin → Settings → Email (SMTP) replace the `SMTP_*`
+  environment variables, take effect immediately, and are stored (password
+  included) in `db.json`. Click **Use environment variables instead** to go back.
 - Square token scopes: `ITEMS_READ`, `ITEMS_WRITE`, and `MERCHANT_PROFILE_READ`
   (for the connection test).
+- **Payment links** (admin → Square → Payment links): each new quote gets a
+  Square checkout link, shown as a Pay now button, a QR code on the kiosk, and
+  in the email and PDF. Customers choose shipping (flat rate, set on the
+  Pricing tab) or free local pickup; Square collects the shipping address at
+  checkout. Prices are treated as tax-included. The Quotes tab checks Square
+  for payments each time it loads and shows the shipping address once paid.
+  Extra token scopes: `ORDERS_READ`, `ORDERS_WRITE`, `PAYMENTS_WRITE` (a personal
+  access token already has them). `SQUARE_LOCATION_ID` picks the location if
+  you don't choose one in admin.
 - Admin logins are in memory, so a container restart logs you out. Nothing else is lost.
 - Quote submissions are rate limited per IP (8 per 10 minutes) and have a
   honeypot field for bots.

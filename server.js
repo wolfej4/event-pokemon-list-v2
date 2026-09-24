@@ -9,9 +9,10 @@ const PORT = process.env.PORT || 3000;
 for (const [k, msg] of [
   ["N3D_API_KEY", "syncing from N3D will fail"],
   ["ADMIN_PASSWORD", "every admin login will be rejected"],
-  ["SMTP_HOST", "quotes will be saved and downloadable, but not emailed"],
   ["SQUARE_ACCESS_TOKEN", "Square push is disabled"]
 ]) if (!process.env[k]) console.warn(`[startup] ${k} is not set — ${msg}.`);
+
+if (!require("./src/mailer").configured()) console.warn("[startup] Email (SMTP) is not set up — quotes will be saved and downloadable, but not emailed. Set it in admin Settings or with SMTP_* env vars.");
 
 let secret = process.env.SESSION_SECRET;
 if (!secret) {

@@ -4,12 +4,17 @@
   "private": true,
   "description": "Customer-facing N3D design catalog with quotes, admin pricing, N3D sync and Square push.",
   "main": "server.js",
-  "scripts": { "start": "node server.js" },
-  "engines": { "node": ">=20" },
+  "scripts": {
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "express": "^4.21.2",
     "express-session": "^1.18.1",
     "nodemailer": "^6.9.16",
-    "pdfkit": "^0.15.2"
+    "pdfkit": "^0.15.2",
+    "qrcode": "^1.5.4"
   }
 }

@@ -4,6 +4,8 @@ const crypto = require("crypto");
 const db = require("../db");
 const { unitCents, fmt } = require("../pricing");
 const { buildQuotePdf } = require("../pdf");
+const QRCode = require("qrcode");
+const payments = require("../payments");
 const mailer = require("../mailer");
 const rateLimit = require("../rateLimit");
 const logo = require("../logo");
@@ -37,6 +39,8 @@ router.get("/settings", (req, res) => {
   res.json({
     businessName: s.businessName, tagline: s.tagline, currency: s.currency,
     kioskIdleSeconds: s.kioskIdleSeconds,
+    shippingCents: Math.round((Number(s.pricing.shipping) || 0) * 100),
+    payOnline: payments.enabled(),
     logo: logo.urls(s),
     logoShowName: s.logoShowName !== false
   });
@@ -75,6 +79,8 @@ router.post("/quotes", rateLimit({ windowMs: 10 * 60 * 1000, max: 8 }), async (r
   };
   if (!customer.name) return res.status(400).json({ error: "Enter your name." });
   if (!EMAIL_RE.test(customer.email)) return res.status(400).json({ error: "Enter a valid email address." });
+  const fulfillment = body.fulfillment === "ship" ? "ship" : body.fulfillment === "pickup" ? "pickup" : null;
+  if (!fulfillment) return res.status(400).json({ error: "Choose shipping or local pickup." });
 
   const s = db.getSettings();
   const items = [];
@@ -91,6 +97,8 @@ router.post("/quotes", rateLimit({ windowMs: 10 * 60 * 1000, max: 8 }), async (r
   }
   if (!items.length) return res.status(400).json({ error: "Add at least one design to your quote." });
 
+  const subtotal = items.reduce((sum, i) => sum + i.unit_cents * i.qty, 0);
+  const shipping = fulfillment === "ship" ? Math.round((Number(s.pricing.shipping) || 0) * 100) : 0;
   const now = new Date();
   const id = "Q-" + now.toISOString().slice(0, 10).replace(/-/g, "") + "-" + crypto.randomBytes(2).toString("hex").toUpperCase();
   const quote = db.addQuote({
@@ -98,11 +106,16 @@ router.post("/quotes", rateLimit({ windowMs: 10 * 60 * 1000, max: 8 }), async (r
     token: crypto.randomBytes(16).toString("hex"),
     created_at: now.toISOString(),
     source: body.kiosk ? "kiosk" : "web",
-    customer, items,
-    total_cents: items.reduce((sum, i) => sum + i.unit_cents * i.qty, 0),
+    customer, items, fulfillment,
+    subtotal_cents: subtotal,
+    shipping_cents: shipping,
+    total_cents: subtotal + shipping,
     status: "new",
     email: null
   });
+
+  if (payments.enabled()) await payments.attachLink(quote, req); // updates quote in place
+  const payUrl = quote.payment && quote.payment.url || null;
 
   let pdf;
   try { pdf = await buildQuotePdf(quote, s); }
@@ -119,7 +132,10 @@ router.post("/quotes", rateLimit({ windowMs: 10 * 60 * 1000, max: 8 }), async (r
     id,
     total: fmt(quote.total_cents, s.currency),
     emailed: email.customer === "sent",
-    pdf_url: `/api/public/quotes/${id}/pdf?t=${quote.token}`
+    pdf_url: `/api/public/quotes/${id}/pdf?t=${quote.token}`,
+    pay_url: payUrl,
+    // an SVG QR code for the booth tablet, so customers pay on their own phone
+    pay_qr: payUrl && body.kiosk ? await QRCode.toString(payUrl, { type: "svg", margin: 1 }) : null
   });
 });
 

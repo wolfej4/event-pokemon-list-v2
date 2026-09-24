@@ -75,10 +75,27 @@ function buildQuotePdf(quote, settings) {
     }
 
     y += 10;
+    if (quote.fulfillment) {
+      const ship = quote.fulfillment === "ship";
+      doc.font("Helvetica").fontSize(9.5).fillColor("#374151")
+        .text("Subtotal", L + 250, y, { width: 170, align: "right" })
+        .text(fmt(quote.subtotal_cents, cur), L + 420, y, { width: W - 426, align: "right" });
+      y += 16;
+      doc.text(ship ? "Shipping" : "Local pickup", L + 250, y, { width: 170, align: "right" })
+        .text(ship ? fmt(quote.shipping_cents, cur) : "Free", L + 420, y, { width: W - 426, align: "right" });
+      y += 20;
+    }
     doc.font("Helvetica-Bold").fontSize(12).fillColor("#111827")
       .text("Estimated total", L + 250, y, { width: 170, align: "right" })
       .text(fmt(quote.total_cents, cur), L + 420, y, { width: W - 426, align: "right" });
     y += 30;
+
+    const payUrl = quote.payment && quote.payment.status !== "paid" && quote.payment.url;
+    if (payUrl) {
+      doc.font("Helvetica-Bold").fontSize(10).fillColor(accent).text("Pay online: ", L, y, { continued: true })
+        .font("Helvetica").text(payUrl, { link: payUrl, underline: true });
+      y = doc.y + 16;
+    }
 
     if (quote.customer.notes) {
       doc.font("Helvetica-Bold").fontSize(9).fillColor(muted).text("Notes from customer", L, y);

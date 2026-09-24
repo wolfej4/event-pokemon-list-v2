@@ -36,14 +36,14 @@
     [].forEach.call(this.children, function(x){ x.classList.toggle("active", x === b); });
     [].forEach.call(document.querySelectorAll("[data-panel]"), function(p){ p.hidden = p.dataset.panel !== b.dataset.tab; });
     if (b.dataset.tab === "quotes") loadQuotes();
-    if (b.dataset.tab === "square") checkSquareJob();
+    if (b.dataset.tab === "square") { checkSquareJob(); initSquarePay(); }
     if (b.dataset.tab === "inventory") initInventory();
   });
 
   function boot(){
     Promise.all([api("/settings"), api("/status")]).then(function(r){
       settings = r[0]; status = r[1];
-      fillSettings(); fillPricing(); renderConn(); renderLogos(); renderStorageAlert();
+      fillSettings(); fillSmtp(); fillPricing(); renderConn(); renderLogos(); renderStorageAlert();
       if (settings.businessName) $("bar-title").textContent = settings.businessName + " admin";
       return loadDesigns();
     }).catch(function(e){ setStatus($("sync-status"), e.message, "bad"); });
@@ -131,7 +131,7 @@
   $("full-sync").addEventListener("click", function(){ runSync(true); });
 
   // ---------- pricing ----------
-  var PK = ["baseFee","perGram","perHour","markupPct","minPrice","roundTo"];
+  var PK = ["baseFee","perGram","perHour","markupPct","minPrice","roundTo","shipping"];
   function fillPricing(){ PK.forEach(function(k){ $("p-" + k).value = settings.pricing[k]; }); }
   function formPricing(){ var p = {}; PK.forEach(function(k){ p[k] = Number($("p-" + k).value) || 0; }); return p; }
   function hours(t){
@@ -194,10 +194,45 @@
     api("/n3d/check").then(function(){ setStatus($("conn-status"), "N3D key works.", "ok"); })
       .catch(function(e){ setStatus($("conn-status"), e.message, "bad"); });
   });
-  $("smtp-test").addEventListener("click", function(){
-    setStatus($("conn-status"), "Connecting to the mail server…");
-    api("/smtp/test", { method:"POST" }).then(function(){ setStatus($("conn-status"), "Mail server accepted the login.", "ok"); })
-      .catch(function(e){ setStatus($("conn-status"), e.message, "bad"); });
+  function testSmtp(el){
+    setStatus(el, "Connecting to the mail server…");
+    api("/smtp/test", { method:"POST" }).then(function(){ setStatus(el, "Mail server accepted the login.", "ok"); })
+      .catch(function(e){ setStatus(el, e.message, "bad"); });
+  }
+  $("smtp-test").addEventListener("click", function(){ testSmtp($("conn-status")); });
+
+  // ---------- email (SMTP) ----------
+  function fillSmtp(){
+    var m = settings.smtp || {}, saved = !!m.host;
+    $("smtp-host").value = m.host || "";
+    $("smtp-port").value = m.port || "";
+    $("smtp-secure").value = typeof m.secure === "boolean" ? String(m.secure) : "";
+    $("smtp-from").value = m.from || "";
+    $("smtp-user").value = m.user || "";
+    $("smtp-pass").value = "";
+    $("smtp-pass").placeholder = m.passSet ? "Saved (leave blank to keep)" : "";
+    $("smtp-clear-pass").checked = false;
+    $("smtp-clear-pass-wrap").hidden = !m.passSet;
+    $("smtp-clear").hidden = !saved;
+    $("smtp-source").textContent = saved ? "Using the settings below."
+      : status.smtp ? "Currently using the SMTP_* environment variables. Save settings here to replace them."
+      : "Not set up yet. Quotes are still saved, but not emailed.";
+  }
+  function refreshStatus(){ return api("/status").then(function(s){ status = s; renderConn(); fillSmtp(); }); }
+  $("smtp-form").addEventListener("submit", function(e){
+    e.preventDefault();
+    var body = { host: $("smtp-host").value, port: $("smtp-port").value || 587, secure: $("smtp-secure").value,
+      from: $("smtp-from").value, user: $("smtp-user").value, pass: $("smtp-pass").value, clearPass: $("smtp-clear-pass").checked };
+    api("/smtp", { method:"POST", body: body })
+      .then(function(s){ settings = s; setStatus($("smtp-status"), "Saved. Click Test email to check the login.", "ok"); return refreshStatus(); })
+      .catch(function(err){ setStatus($("smtp-status"), err.message, "bad"); });
+  });
+  $("smtp-test-2").addEventListener("click", function(){ testSmtp($("smtp-status")); });
+  $("smtp-clear").addEventListener("click", function(){
+    if (!confirm("Remove the saved email settings and use the SMTP_* environment variables instead?")) return;
+    api("/smtp", { method:"POST", body:{ clear:true } })
+      .then(function(s){ settings = s; setStatus($("smtp-status"), "Saved settings removed.", "ok"); return refreshStatus(); })
+      .catch(function(err){ setStatus($("smtp-status"), err.message, "bad"); });
   });
 
   function renderStorageAlert(){
@@ -264,6 +299,8 @@
   function loadQuotes(){
     api("/quotes").then(function(r){
       var list = r.data || [];
+      $("quote-pay-error").hidden = !r.paymentError;
+      $("quote-pay-error").textContent = r.paymentError ? "Couldn\u2019t check payments with Square: " + r.paymentError : "";
       $("quote-summary").textContent = list.length ? list.length + " requests, " + list.filter(function(q){ return q.status === "new"; }).length + " new" : "No quote requests yet.";
       $("quote-rows").innerHTML = list.map(function(q){
         var em = q.email || {};
@@ -273,7 +310,8 @@
           '<td>' + esc(q.customer.name) + '<div class="dm"><a href="mailto:' + esc(q.customer.email) + '">' + esc(q.customer.email) + '</a>' + (q.customer.phone ? ", " + esc(q.customer.phone) : "") + '</div>' +
             (q.customer.notes ? '<div class="dm" title="' + esc(q.customer.notes) + '">“' + esc(q.customer.notes.slice(0, 60)) + (q.customer.notes.length > 60 ? "…" : "") + '”</div>' : "") + '</td>' +
           '<td class="dm" style="max-width:260px">' + q.items.map(function(i){ return esc(i.qty + "× " + i.title); }).join("<br>") + '</td>' +
-          '<td><strong>' + esc(q.total) + '</strong></td><td>' + emailPill + '</td>' +
+          '<td><strong>' + esc(q.total) + '</strong><div class="dm">' + (q.fulfillment === "ship" ? "Ship" : q.fulfillment === "pickup" ? "Pickup" : "") + '</div></td><td>' + emailPill + '</td>' +
+          '<td>' + payCell(q) + '</td>' +
           '<td><select class="input q-status" aria-label="Status">' + ["new","contacted","won","lost"].map(function(s){
             return '<option' + (s === q.status ? " selected" : "") + '>' + s + '</option>'; }).join("") + '</select></td>' +
           '<td><div class="cell-actions"><a class="btn small" target="_blank" rel="noopener" href="/api/admin/quotes/' + encodeURIComponent(q.id) + '/pdf">PDF</a>' +
@@ -286,7 +324,22 @@
     var id = e.target.closest("tr").dataset.id;
     api("/quotes/" + encodeURIComponent(id), { method:"POST", body:{ status: e.target.value } });
   });
+  function payCell(q){
+    var p = q.payment;
+    if (p && p.status === "paid") return '<span class="pill ok">Paid</span>' + (p.ship_to ? '<div class="dm ship-to">' + esc(p.ship_to).replace(/\n/g, "<br>") + '</div>' : '');
+    if (p && p.url) return '<span class="pill warn">Unpaid</span> <a class="dm" href="' + esc(p.url) + '" target="_blank" rel="noopener">Link</a>';
+    var btn = status.square ? '<button class="btn ghost small" data-paylink type="button">Create link</button>' : '';
+    return (p && p.error ? '<span class="pill bad" title="' + esc(p.error) + '">Link failed</span> ' : '<span class="muted">\u2014</span> ') + btn;
+  }
   $("quote-rows").addEventListener("click", function(e){
+    var pb = e.target.closest("[data-paylink]");
+    if (pb) {
+      var row = pb.closest("tr"), msg = row.querySelector(".saved");
+      pb.disabled = true; msg.textContent = "Creating link…";
+      return api("/quotes/" + encodeURIComponent(row.dataset.id) + "/payment-link", { method:"POST" })
+        .then(function(){ msg.textContent = "Link created. Click Resend to email it."; setTimeout(loadQuotes, 2500); })
+        .catch(function(err){ msg.textContent = err.message; pb.disabled = false; });
+    }
     var b = e.target.closest("[data-resend]"); if (!b) return;
     var tr = b.closest("tr"), note = tr.querySelector(".saved");
     b.disabled = true; note.textContent = "Sending…";
@@ -351,6 +404,24 @@
   }
 
   // ---------- square ----------
+  var sqLocLoaded = false;
+  function initSquarePay(){
+    $("sq-pay-on").checked = !!settings.squarePaymentLinks;
+    $("sq-pay-on").disabled = !status.square;
+    if (sqLocLoaded || !status.square) return;
+    sqLocLoaded = true;
+    api("/square/test").then(function(r){
+      $("sq-location").innerHTML = '<option value="">First active location</option>' + r.locations.map(function(l){
+        return '<option value="' + esc(l.id) + '"' + (l.id === settings.squareLocationId ? " selected" : "") + '>' + esc(l.name) + (l.status === "ACTIVE" ? "" : " (inactive)") + '</option>';
+      }).join("");
+    }).catch(function(e){ sqLocLoaded = false; setStatus($("sq-pay-status"), e.message, "bad"); });
+  }
+  $("sq-pay-form").addEventListener("submit", function(e){
+    e.preventDefault();
+    api("/settings", { method:"POST", body:{ squarePaymentLinks: $("sq-pay-on").checked, squareLocationId: $("sq-location").value } })
+      .then(function(s){ settings = s; setStatus($("sq-pay-status"), "Saved.", "ok"); })
+      .catch(function(err){ setStatus($("sq-pay-status"), err.message, "bad"); });
+  });
   $("sq-test").addEventListener("click", function(){
     setStatus($("sq-locations"), "Connecting to Square…");
     api("/square/test").then(function(r){
