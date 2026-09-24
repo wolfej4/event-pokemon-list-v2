@@ -97,11 +97,18 @@ Behind HTTPS (Nginx Proxy Manager, Traefik, Cloudflare Tunnel), set
   customers to Square to pay (a QR code on the kiosk), and the link is also in
   the email and PDF. Customers choose shipping (flat rate, set on the
   Pricing tab) or free local pickup; Square collects the shipping address at
-  checkout. Prices are treated as tax-included. The Orders tab checks Square
+  checkout. After paying, Square sends the customer to an order
+  confirmation page (`/order/<id>`) showing payment status, what they ordered,
+  and where it's shipping (or pickup details). Needs the site on HTTPS. Prices are treated as tax-included. The Orders tab checks Square
   for payments each time it loads and shows the shipping address once paid.
   Extra token scopes: `ORDERS_READ`, `ORDERS_WRITE`, `PAYMENTS_WRITE` (a personal
   access token already has them). `SQUARE_LOCATION_ID` picks the location if
   you don't choose one in admin.
+- **Apple Pay domain verification:** upload Apple's
+  `apple-developer-merchantid-domain-association` file in admin → Square and
+  it's served at `/.well-known/apple-developer-merchantid-domain-association`
+  (stored on the data volume). Square's hosted checkout already offers Apple
+  Pay on its own domain, so this is only needed if you're asked to verify yours.
 - Admin logins are in memory, so a container restart logs you out. Nothing else is lost.
 - Orders are rate limited per IP (40 per 10 minutes, since venue wifi shares one IP) and have a
   honeypot field for bots.

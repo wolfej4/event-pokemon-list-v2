@@ -16,6 +16,17 @@ function authHeaders() {
   return { Authorization: "Bearer " + process.env.SQUARE_ACCESS_TOKEN, "Square-Version": VERSION };
 }
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const envName = () => (isSandbox() ? "sandbox" : "production");
+
+// Square answers a token from the other environment with a bare "could not be
+// authorized", so say what to check instead.
+function authError() {
+  const e = new Error(isSandbox()
+    ? "Square rejected the access token. The app is in sandbox mode (SQUARE_ENV / SQUARE_ENVIRONMENT = sandbox), which needs the Sandbox access token from the Square Developer Console, not your production one. Update SQUARE_ACCESS_TOKEN or switch the environment back, then redeploy."
+    : "Square rejected the access token. The app is in production mode, which needs your Production access token from the Square Developer Console (not the Sandbox one). Check SQUARE_ACCESS_TOKEN, then redeploy.");
+  e.status = 401;
+  return e;
+}
 
 async function call(method, path, body, attempt = 0) {
   const res = await fetch(base() + path, {
@@ -25,6 +36,7 @@ async function call(method, path, body, attempt = 0) {
   });
   if (res.status === 429 && attempt < 4) { await sleep(1500 * (attempt + 1)); return call(method, path, body, attempt + 1); }
   const json = await res.json().catch(() => ({}));
+  if (res.status === 401) throw authError();
   if (!res.ok) {
     const e = new Error((json.errors && json.errors.map(x => x.detail || x.code).join("; ")) || ("Square error " + res.status));
     e.status = res.status;
@@ -146,6 +158,7 @@ async function uploadImage(itemId, imageUrl, name) {
   form.append("file", new Blob([buf], { type }), "design." + ext);
 
   const res = await fetch(base() + "/v2/catalog/images", { method: "POST", headers: authHeaders(), body: form });
+  if (res.status === 401) throw authError();
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error("image upload: " + ((json.errors && json.errors.map(x => x.detail).join("; ")) || res.status));
   return json.image && json.image.id;
@@ -218,4 +231,4 @@ async function pushDesign(d, priceCents, { currency = "USD", overwritePrice = tr
 
 async function deletePaymentLink(id) { await call("DELETE", "/v2/online-checkout/payment-links/" + encodeURIComponent(id)); }
 
-module.exports = { createPaymentLink, deletePaymentLink, paymentStatuses, isSandbox, configured, testConnection, pushDesign, describe };
+module.exports = { envName, createPaymentLink, deletePaymentLink, paymentStatuses, isSandbox, configured, testConnection, pushDesign, describe };

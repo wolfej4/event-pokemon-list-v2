@@ -38,6 +38,21 @@ app.use(session({
   cookie: { httpOnly: true, sameSite: "lax", secure: process.env.COOKIE_SECURE === "true", maxAge: 12 * 3600 * 1000 }
 }));
 
+// Apple Pay domain verification (uploaded in admin → Square)
+app.get("/.well-known/apple-developer-merchantid-domain-association", (req, res) => {
+  const f = require("./src/applePay").read();
+  if (!f) return res.status(404).type("text/plain").send("Not found");
+  res.type("text/plain").set("Cache-Control", "no-cache").send(f);
+});
+
+// Payment links made before the order page existed send customers to /?paid=<id>
+app.get("/", (req, res, next) => {
+  if (!req.query.paid) return next();
+  res.redirect(302, "/order/" + encodeURIComponent(String(req.query.paid).slice(0, 40)));
+});
+// order confirmation page (Square sends customers here after paying)
+app.get("/order/:id", (req, res) => res.set("Cache-Control", "no-cache").sendFile(path.join(__dirname, "public", "order.html")));
+
 app.get("/healthz", (req, res) => res.json({ ok: true }));
 app.use("/api/public", require("./src/routes/public"));
 app.use("/api/admin", require("./src/routes/admin"));

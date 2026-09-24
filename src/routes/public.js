@@ -140,12 +140,45 @@ router.post("/quotes", rateLimit({ windowMs: 10 * 60 * 1000, max: 40 }), async (
   });
 });
 
-router.get("/quotes/:id/pdf", async (req, res) => {
+// the order's secret token (from the checkout redirect or PDF link) unlocks its details
+function orderFor(req) {
   const q = db.getQuote(req.params.id);
   const t = String(req.query.t || "");
-  if (!q || t.length !== q.token.length || !crypto.timingSafeEqual(Buffer.from(t), Buffer.from(q.token))) {
-    return res.status(404).send("Not found");
+  if (!q || t.length !== q.token.length || !crypto.timingSafeEqual(Buffer.from(t), Buffer.from(q.token))) return null;
+  return q;
+}
+
+// Order confirmation page data. Asks Square for the payment status first,
+// since the customer usually arrives here straight from paying.
+router.get("/orders/:id", async (req, res) => {
+  const q = orderFor(req);
+  if (!q) return res.status(404).json({ error: "not_found" });
+  if (q.payment && q.payment.order_id && q.payment.status !== "paid") {
+    try { await payments.refreshStatuses([q]); } catch (e) { /* show the last known status */ }
   }
+  const s = db.getSettings(), cur = s.currency;
+  const p = q.payment || {};
+  res.json({
+    id: q.id,
+    created_at: q.created_at,
+    name: q.customer.name,
+    email: q.customer.email,
+    fulfillment: q.fulfillment || null,
+    items: q.items.map(i => ({ title: i.title, qty: i.qty, total: fmt(i.unit_cents * i.qty, cur) })),
+    subtotal: q.subtotal_cents != null ? fmt(q.subtotal_cents, cur) : null,
+    shipping: q.shipping_cents ? fmt(q.shipping_cents, cur) : null,
+    total: fmt(q.total_cents, cur),
+    paid: p.status === "paid",
+    pay_url: p.status !== "paid" && p.url ? p.url : null,
+    ship_to: p.status === "paid" ? p.ship_to || null : null,
+    business_email: s.businessEmail || null,
+    pdf_url: `/api/public/quotes/${q.id}/pdf?t=${q.token}`
+  });
+});
+
+router.get("/quotes/:id/pdf", async (req, res) => {
+  const q = orderFor(req);
+  if (!q) return res.status(404).send("Not found");
   const pdf = await buildQuotePdf(q, db.getSettings());
   res.setHeader("Content-Type", "application/pdf");
   res.setHeader("Content-Disposition", `inline; filename="order-${q.id}.pdf"`);
