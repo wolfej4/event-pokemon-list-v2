@@ -39,8 +39,6 @@ router.get("/settings", (req, res) => {
   res.json({
     businessName: s.businessName, tagline: s.tagline, currency: s.currency,
     kioskIdleSeconds: s.kioskIdleSeconds,
-    shippingCents: Math.round((Number(s.pricing.shipping) || 0) * 100),
-    payOnline: payments.enabled(),
     logo: logo.urls(s),
     logoShowName: s.logoShowName !== false
   });
@@ -69,6 +67,7 @@ const clip = (v, n) => String(v || "").trim().slice(0, n);
 
 // generous limit: everyone on the venue wifi (and the kiosk) shares one IP
 router.post("/quotes", rateLimit({ windowMs: 10 * 60 * 1000, max: 40 }), async (req, res) => {
+  if (!payments.ORDERING_ENABLED) return res.status(410).json({ error: "Online ordering is turned off." });
   const body = req.body || {};
   if (body.website) return res.json({ ok: true }); // honeypot: bots fill hidden fields
 

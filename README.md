@@ -1,6 +1,6 @@
 # N3D Catalog
 
-Customer-facing shop for your N3D designs with a cart and Square checkout, plus an admin
+Customer-facing catalog of your N3D designs with prices, plus an admin
 panel for pricing, N3D sync, and pushing to Square. Light and dark mode on both.
 
 ## What it does
@@ -8,12 +8,11 @@ panel for pricing, N3D sync, and pushing to Square. Light and dark mode on both.
 **Storefront (`/`)**
 - Browse, search (name, type, Pokédex #), and filter designs. Each card shows a
   strip of the design's actual filament colors.
-- Add designs to a cart, change quantities, choose shipping (flat rate) or free
-  local pickup, and check out with name/email/phone/notes.
-- The server prices every line itself, saves the order, and (with payment links
-  on) sends the customer to Square's checkout. On the kiosk it shows a QR code
-  so they pay on their own phone. An order summary PDF is emailed to the
-  customer and to you.
+- Each design shows its price, print time, weight and filament colors, plus a
+  "Buy online" button when it has a shop link (hidden in kiosk mode).
+- Browse-only: there's no cart or online ordering. (The order/checkout code is
+  still in place behind `ORDERING_ENABLED` in `src/payments.js`, but the cart
+  UI was removed.)
 - Light/dark toggle in the header. Follows the device setting until someone
   picks one, then remembers it.
 
@@ -93,7 +92,7 @@ Behind HTTPS (Nginx Proxy Manager, Traefik, Cloudflare Tunnel), set
   included) in `db.json`. Click **Use environment variables instead** to go back.
 - Square token scopes: `ITEMS_READ`, `ITEMS_WRITE`, and `MERCHANT_PROFILE_READ`
   (for the connection test).
-- **Payment links** (admin → Square → Payment links): checkout sends
+- **Payment links** (currently off, since the storefront has no cart): checkout sends
   customers to Square to pay (a QR code on the kiosk), and the link is also in
   the email and PDF. Customers choose shipping (flat rate, set on the
   Pricing tab) or free local pickup; Square collects the shipping address at

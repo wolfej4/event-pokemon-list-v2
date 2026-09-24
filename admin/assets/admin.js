@@ -516,6 +516,7 @@
   });
   function initSquarePay(){
     $("sq-pay-on").checked = !!settings.squarePaymentLinks;
+    $("sq-pay-form").hidden = !status.ordering; // checkout is off, so payment links don't apply
     $("sq-pay-on").disabled = $("sq-pay-test").disabled = !status.square;
     renderApplePay();
     renderPayProblem();

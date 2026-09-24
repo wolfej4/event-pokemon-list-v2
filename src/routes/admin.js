@@ -40,6 +40,7 @@ router.get("/status", (req, res) => {
     squareEnv: square.isSandbox() ? "sandbox" : "production",
     spoolman: spoolman.configured(),
     paymentProblem: payments.problem(),
+    ordering: payments.ORDERING_ENABLED,
     applePayFile: applePay.exists(),
     storageError: db.writeError()
   });

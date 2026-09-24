@@ -3,7 +3,11 @@
 const db = require("./db");
 const square = require("./squareClient");
 
-const enabled = () => square.configured() && !!db.getSettings().squarePaymentLinks;
+// The storefront is browse-only: no cart and no online orders. Flip this to
+// bring back checkout (the cart UI would need restoring too).
+const ORDERING_ENABLED = false;
+
+const enabled = () => ORDERING_ENABLED && square.configured() && !!db.getSettings().squarePaymentLinks;
 let lastError = null; // { message, at, id } from the most recent failed link
 
 // Square sends the customer back here after paying. Only offered over HTTPS,
@@ -16,6 +20,7 @@ function redirectUrl(req, quote) {
 
 // Why customers can't pay right now, or null if they can.
 function problem() {
+  if (!ORDERING_ENABLED) return null;
   if (!square.configured()) return "SQUARE_ACCESS_TOKEN isn't set, so checkout can't take payment. Add it to the stack's environment variables and redeploy.";
   if (!db.getSettings().squarePaymentLinks) return "\u201cTake payment at checkout\u201d is turned off on the Square tab, so orders are saved without a way to pay.";
   if (lastError) return "Square refused the last payment link (order " + lastError.id + "): " + lastError.message;
@@ -68,4 +73,4 @@ async function refreshStatuses(quotes) {
   }
 }
 
-module.exports = { enabled, attachLink, refreshStatuses, problem, testLink };
+module.exports = { ORDERING_ENABLED, enabled, attachLink, refreshStatuses, problem, testLink };
