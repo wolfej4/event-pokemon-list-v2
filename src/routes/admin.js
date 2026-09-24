@@ -12,6 +12,7 @@ const { checkPassword, requireAdmin } = require("../auth");
 const rateLimit = require("../rateLimit");
 const logo = require("../logo");
 const payments = require("../payments");
+const applePay = require("../applePay");
 
 const router = express.Router();
 
@@ -39,6 +40,7 @@ router.get("/status", (req, res) => {
     squareEnv: square.isSandbox() ? "sandbox" : "production",
     spoolman: spoolman.configured(),
     paymentProblem: payments.problem(),
+    applePayFile: applePay.exists(),
     storageError: db.writeError()
   });
 });
@@ -158,6 +160,15 @@ router.post("/settings", (req, res) => {
 });
 
 // ---------- logo ----------
+router.post("/apple-pay-file", express.raw({ type: () => true, limit: "200kb" }), (req, res) => {
+  try { applePay.save(req.body); res.json({ ok: true }); }
+  catch (e) {
+    if (e.code === "EACCES" || e.code === "EPERM") return res.status(500).json({ error: "The app can't write to its data folder. See the warning at the top of the admin panel." });
+    res.status(400).json({ error: e.message });
+  }
+});
+router.delete("/apple-pay-file", (req, res) => { applePay.remove(); res.json({ ok: true }); });
+
 router.post("/logo/:variant", express.raw({ type: () => true, limit: "2mb" }), (req, res) => {
   try {
     if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: "Choose an image file." });

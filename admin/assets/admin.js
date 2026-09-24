@@ -513,6 +513,7 @@
   function initSquarePay(){
     $("sq-pay-on").checked = !!settings.squarePaymentLinks;
     $("sq-pay-on").disabled = $("sq-pay-test").disabled = !status.square;
+    renderApplePay();
     renderPayProblem();
     if (sqLocLoaded || !status.square) return;
     sqLocLoaded = true;
@@ -522,6 +523,28 @@
       }).join("");
     }).catch(function(e){ sqLocLoaded = false; setStatus($("sq-pay-status"), e.message, "bad"); });
   }
+  // ---------- Apple Pay domain verification file ----------
+  var AP_PATH = "/.well-known/apple-developer-merchantid-domain-association";
+  function renderApplePay(){
+    $("ap-url").href = AP_PATH; $("ap-url").textContent = location.origin + AP_PATH;
+    $("ap-state").innerHTML = status.applePayFile ? '<span class="pill ok">Uploaded</span> Apple can fetch it now.' : '<span class="pill warn">Not uploaded</span>';
+    $("ap-remove").hidden = !status.applePayFile;
+  }
+  $("ap-file").addEventListener("change", function(){
+    var f = this.files[0]; this.value = ""; if (!f) return;
+    setStatus($("ap-status"), "Uploading\u2026");
+    fetch("/api/admin/apple-pay-file", { method:"POST", headers:{ "Content-Type":"application/octet-stream" }, body:f })
+      .then(function(r){ return r.json().then(function(j){ if (!r.ok) throw new Error(j.error || "Upload failed."); }); })
+      .then(function(){ status.applePayFile = true; renderApplePay(); setStatus($("ap-status"), "Saved. Now click Verify in Square or Apple.", "ok"); })
+      .catch(function(err){ setStatus($("ap-status"), err.message, "bad"); });
+  });
+  $("ap-remove").addEventListener("click", function(){
+    if (!confirm("Remove the Apple Pay verification file?")) return;
+    api("/apple-pay-file", { method:"DELETE" })
+      .then(function(){ status.applePayFile = false; renderApplePay(); setStatus($("ap-status"), "Removed.", "ok"); })
+      .catch(function(err){ setStatus($("ap-status"), err.message, "bad"); });
+  });
+
   // both save as soon as they change, like the other switches in admin
   function saveSquarePay(body, revert){
     setStatus($("sq-pay-status"), "Saving\u2026");

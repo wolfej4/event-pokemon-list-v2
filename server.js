@@ -38,6 +38,13 @@ app.use(session({
   cookie: { httpOnly: true, sameSite: "lax", secure: process.env.COOKIE_SECURE === "true", maxAge: 12 * 3600 * 1000 }
 }));
 
+// Apple Pay domain verification (uploaded in admin → Square)
+app.get("/.well-known/apple-developer-merchantid-domain-association", (req, res) => {
+  const f = require("./src/applePay").read();
+  if (!f) return res.status(404).type("text/plain").send("Not found");
+  res.type("text/plain").set("Cache-Control", "no-cache").send(f);
+});
+
 app.get("/healthz", (req, res) => res.json({ ok: true }));
 app.use("/api/public", require("./src/routes/public"));
 app.use("/api/admin", require("./src/routes/admin"));

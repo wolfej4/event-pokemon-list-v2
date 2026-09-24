@@ -153,6 +153,17 @@
           <ul class="errors" id="sq-errors"></ul>
         </div>
       </div>
+      <div class="panel" style="margin-top:18px">
+        <h3>Apple Pay domain verification</h3>
+        <p class="sub">Only needed if Apple or Square asks you to verify this domain. Upload the <code>apple-developer-merchantid-domain-association</code> file and it's served at
+          <a id="ap-url" target="_blank" rel="noopener"></a>.</p>
+        <p class="sub" id="ap-state"></p>
+        <div class="row">
+          <label class="btn small">Upload file<input type="file" id="ap-file" hidden></label>
+          <button class="btn ghost small" id="ap-remove" type="button" hidden>Remove</button>
+        </div>
+        <p class="status" id="ap-status" role="status"></p>
+      </div>
     </section>
 
 

@@ -102,6 +102,11 @@ Behind HTTPS (Nginx Proxy Manager, Traefik, Cloudflare Tunnel), set
   Extra token scopes: `ORDERS_READ`, `ORDERS_WRITE`, `PAYMENTS_WRITE` (a personal
   access token already has them). `SQUARE_LOCATION_ID` picks the location if
   you don't choose one in admin.
+- **Apple Pay domain verification:** upload Apple's
+  `apple-developer-merchantid-domain-association` file in admin → Square and
+  it's served at `/.well-known/apple-developer-merchantid-domain-association`
+  (stored on the data volume). Square's hosted checkout already offers Apple
+  Pay on its own domain, so this is only needed if you're asked to verify yours.
 - Admin logins are in memory, so a container restart logs you out. Nothing else is lost.
 - Orders are rate limited per IP (40 per 10 minutes, since venue wifi shares one IP) and have a
   honeypot field for bots.
