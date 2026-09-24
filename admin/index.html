@@ -195,7 +195,7 @@
         </form>
         <div class="panel">
           <h3>Connections</h3>
-          <p class="sub">Keys and passwords are set as environment variables in Portainer, not here.</p>
+          <p class="sub">API keys are set as environment variables in Portainer. Email can be set below instead.</p>
           <ul class="conn" id="conn-list"></ul>
           <div class="row"><button class="btn" id="n3d-test" type="button">Test N3D key</button>
           <button class="btn" id="smtp-test" type="button">Test email</button></div>
@@ -205,9 +205,35 @@
         </div>
       </div>
 
+      <form class="panel" id="smtp-form" style="margin-top:18px" autocomplete="off">
+        <h3>Email (SMTP)</h3>
+        <p class="sub" id="smtp-source"></p>
+        <div class="grid2">
+          <div class="field"><label for="smtp-host">Mail server host</label><input id="smtp-host" placeholder="smtp.example.com"></div>
+          <div class="field"><label for="smtp-port">Port</label><input id="smtp-port" type="number" min="1" max="65535" placeholder="587"></div>
+          <div class="field"><label for="smtp-secure">Encryption</label>
+            <select id="smtp-secure">
+              <option value="">Automatic (SSL on port 465, STARTTLS otherwise)</option>
+              <option value="true">SSL/TLS</option>
+              <option value="false">STARTTLS or none</option>
+            </select></div>
+          <div class="field"><label for="smtp-from">From address</label><input id="smtp-from" placeholder="Shop Name &lt;quotes@example.com&gt;"></div>
+          <div class="field"><label for="smtp-user">Username</label><input id="smtp-user" autocomplete="off"></div>
+          <div class="field"><label for="smtp-pass">Password</label><input id="smtp-pass" type="password" autocomplete="new-password"></div>
+        </div>
+        <label class="check" id="smtp-clear-pass-wrap" hidden><input type="checkbox" id="smtp-clear-pass"> Remove the saved password</label>
+        <p class="sub">The password is stored in <code>db.json</code> on the data volume. Settings saved here replace the <code>SMTP_*</code> environment variables.</p>
+        <div class="row">
+          <button class="btn primary" type="submit">Save email settings</button>
+          <button class="btn" id="smtp-test-2" type="button">Test email</button>
+          <button class="btn ghost" id="smtp-clear" type="button" hidden>Use environment variables instead</button>
+        </div>
+        <p class="status" id="smtp-status" role="status"></p>
+      </form>
+
       <div class="panel" style="margin-top:18px">
         <h3>Logo</h3>
-        <p class="sub">Shown in the store header, as the browser tab icon, and on quote PDFs. PNG or SVG with a transparent background works best, up to 2 MB. Only PNG and JPG logos can be printed on the PDF.</p>
+        <p class="sub">Shown in the store header and on quote PDFs. PNG or SVG with a transparent background works best, up to 2 MB. Only PNG and JPG logos can be printed on the PDF.</p>
         <div class="logo-grid">
           <div class="logo-slot" data-variant="light">
             <div class="logo-preview light-bg"><img alt="" hidden><span class="muted">No logo</span></div>

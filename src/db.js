@@ -29,6 +29,7 @@ const DEFAULT_SETTINGS = {
   kioskIdleSeconds: 90,
   logos: {},             // { light: {ext,type,v}, dark: {...} } files live in DATA_DIR
   logoShowName: true,    // show business name next to the logo
+  smtp: {},              // { host, port, secure, user, pass, from } — overrides SMTP_* env vars when host is set
   lastCursor: null
 };
 

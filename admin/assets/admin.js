@@ -43,7 +43,7 @@
   function boot(){
     Promise.all([api("/settings"), api("/status")]).then(function(r){
       settings = r[0]; status = r[1];
-      fillSettings(); fillPricing(); renderConn(); renderLogos(); renderStorageAlert();
+      fillSettings(); fillSmtp(); fillPricing(); renderConn(); renderLogos(); renderStorageAlert();
       if (settings.businessName) $("bar-title").textContent = settings.businessName + " admin";
       return loadDesigns();
     }).catch(function(e){ setStatus($("sync-status"), e.message, "bad"); });
@@ -194,10 +194,45 @@
     api("/n3d/check").then(function(){ setStatus($("conn-status"), "N3D key works.", "ok"); })
       .catch(function(e){ setStatus($("conn-status"), e.message, "bad"); });
   });
-  $("smtp-test").addEventListener("click", function(){
-    setStatus($("conn-status"), "Connecting to the mail server…");
-    api("/smtp/test", { method:"POST" }).then(function(){ setStatus($("conn-status"), "Mail server accepted the login.", "ok"); })
-      .catch(function(e){ setStatus($("conn-status"), e.message, "bad"); });
+  function testSmtp(el){
+    setStatus(el, "Connecting to the mail server…");
+    api("/smtp/test", { method:"POST" }).then(function(){ setStatus(el, "Mail server accepted the login.", "ok"); })
+      .catch(function(e){ setStatus(el, e.message, "bad"); });
+  }
+  $("smtp-test").addEventListener("click", function(){ testSmtp($("conn-status")); });
+
+  // ---------- email (SMTP) ----------
+  function fillSmtp(){
+    var m = settings.smtp || {}, saved = !!m.host;
+    $("smtp-host").value = m.host || "";
+    $("smtp-port").value = m.port || "";
+    $("smtp-secure").value = typeof m.secure === "boolean" ? String(m.secure) : "";
+    $("smtp-from").value = m.from || "";
+    $("smtp-user").value = m.user || "";
+    $("smtp-pass").value = "";
+    $("smtp-pass").placeholder = m.passSet ? "Saved (leave blank to keep)" : "";
+    $("smtp-clear-pass").checked = false;
+    $("smtp-clear-pass-wrap").hidden = !m.passSet;
+    $("smtp-clear").hidden = !saved;
+    $("smtp-source").textContent = saved ? "Using the settings below."
+      : status.smtp ? "Currently using the SMTP_* environment variables. Save settings here to replace them."
+      : "Not set up yet. Quotes are still saved, but not emailed.";
+  }
+  function refreshStatus(){ return api("/status").then(function(s){ status = s; renderConn(); fillSmtp(); }); }
+  $("smtp-form").addEventListener("submit", function(e){
+    e.preventDefault();
+    var body = { host: $("smtp-host").value, port: $("smtp-port").value || 587, secure: $("smtp-secure").value,
+      from: $("smtp-from").value, user: $("smtp-user").value, pass: $("smtp-pass").value, clearPass: $("smtp-clear-pass").checked };
+    api("/smtp", { method:"POST", body: body })
+      .then(function(s){ settings = s; setStatus($("smtp-status"), "Saved. Click Test email to check the login.", "ok"); return refreshStatus(); })
+      .catch(function(err){ setStatus($("smtp-status"), err.message, "bad"); });
+  });
+  $("smtp-test-2").addEventListener("click", function(){ testSmtp($("smtp-status")); });
+  $("smtp-clear").addEventListener("click", function(){
+    if (!confirm("Remove the saved email settings and use the SMTP_* environment variables instead?")) return;
+    api("/smtp", { method:"POST", body:{ clear:true } })
+      .then(function(s){ settings = s; setStatus($("smtp-status"), "Saved settings removed.", "ok"); return refreshStatus(); })
+      .catch(function(err){ setStatus($("smtp-status"), err.message, "bad"); });
   });
 
   function renderStorageAlert(){

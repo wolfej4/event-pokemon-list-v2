@@ -2,18 +2,41 @@
 const nodemailer = require("nodemailer");
 const { fmt } = require("./pricing");
 
-let transporter = null;
-function configured() { return !!(process.env.SMTP_HOST && process.env.SMTP_FROM); }
+const db = require("./db");
+
+// SMTP settings saved in the admin panel win; otherwise fall back to the
+// SMTP_* environment variables.
+function envConfig() {
+  const e = process.env;
+  let from = e.SMTP_FROM || "";
+  if (!from && e.SMTP_FROM_EMAIL) from = e.SMTP_FROM_NAME ? `"${e.SMTP_FROM_NAME.replace(/"/g, "")}" <${e.SMTP_FROM_EMAIL}>` : e.SMTP_FROM_EMAIL;
+  return {
+    host: e.SMTP_HOST || "", port: Number(e.SMTP_PORT) || 587,
+    secure: e.SMTP_SECURE === "true" ? true : e.SMTP_SECURE === "false" ? false : null,
+    user: e.SMTP_USER || "", pass: e.SMTP_PASS || "", from
+  };
+}
+function config() {
+  const s = db.getSettings().smtp;
+  if (s && s.host) return Object.assign({ source: "app" }, s);
+  return Object.assign({ source: "env" }, envConfig());
+}
+function configured() { const c = config(); return !!(c.host && c.from); }
+
+let transporter = null, transporterKey = "";
 function getTransport() {
-  if (!configured()) return null;
-  if (!transporter) {
-    const port = Number(process.env.SMTP_PORT || 587);
+  const c = config();
+  if (!c.host || !c.from) return null;
+  const key = JSON.stringify([c.host, c.port, c.secure, c.user, c.pass]);
+  if (!transporter || key !== transporterKey) {
+    const port = Number(c.port) || 587;
     transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
+      host: c.host,
       port,
-      secure: process.env.SMTP_SECURE ? process.env.SMTP_SECURE === "true" : port === 465,
-      auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } : undefined
+      secure: typeof c.secure === "boolean" ? c.secure : port === 465,
+      auth: c.user ? { user: c.user, pass: c.pass } : undefined
     });
+    transporterKey = key;
   }
   return transporter;
 }
@@ -33,7 +56,7 @@ async function sendQuoteEmails(q, pdf, settings) {
 
   try {
     await t.sendMail({
-      from: process.env.SMTP_FROM,
+      from: config().from,
       to: q.customer.email,
       replyTo: settings.businessEmail || undefined,
       subject: `Your print estimate ${q.id} from ${shop}`,
@@ -46,7 +69,7 @@ async function sendQuoteEmails(q, pdf, settings) {
   if (settings.businessEmail) {
     try {
       await t.sendMail({
-        from: process.env.SMTP_FROM,
+        from: config().from,
         to: settings.businessEmail,
         replyTo: q.customer.email,
         subject: `New quote request ${q.id} — ${q.customer.name} (${fmt(q.total_cents, cur)})`,
@@ -63,9 +86,9 @@ async function sendQuoteEmails(q, pdf, settings) {
 
 async function verify() {
   const t = getTransport();
-  if (!t) throw new Error("SMTP_HOST and SMTP_FROM are not set");
+  if (!t) throw new Error("Email isn't set up. Enter a mail server and From address in Settings.");
   await t.verify();
   return true;
 }
 
-module.exports = { sendQuoteEmails, verify, configured };
+module.exports = { sendQuoteEmails, verify, configured, config };

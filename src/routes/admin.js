@@ -33,6 +33,7 @@ router.get("/status", (req, res) => {
   res.json({
     n3dKey: !!process.env.N3D_API_KEY,
     smtp: mailer.configured(),
+    smtpSource: mailer.config().source,
     square: square.configured(),
     squareEnv: process.env.SQUARE_ENV === "sandbox" ? "sandbox" : "production",
     spoolman: spoolman.configured(),
@@ -96,7 +97,29 @@ router.post("/designs-bulk", (req, res) => {
 });
 
 // ---------- settings ----------
-router.get("/settings", (req, res) => res.json(db.getSettings()));
+// never send the saved SMTP password back to the browser
+function publicSettings(s) {
+  const smtp = s.smtp || {};
+  return Object.assign({}, s, { smtp: Object.assign({}, smtp, { pass: undefined, passSet: !!smtp.pass }) });
+}
+router.get("/settings", (req, res) => res.json(publicSettings(db.getSettings())));
+
+router.post("/smtp", (req, res) => {
+  const b = req.body || {};
+  if (b.clear) return res.json(publicSettings(db.updateSettings({ smtp: {} })));
+  const prev = db.getSettings().smtp || {};
+  const str = (v) => String(v == null ? "" : v).trim().slice(0, 500);
+  const smtp = { host: str(b.host), user: str(b.user), from: str(b.from) };
+  if (!smtp.host) return res.status(400).json({ error: "Enter the mail server host." });
+  if (!smtp.from) return res.status(400).json({ error: "Enter the From address." });
+  const port = parseInt(b.port, 10);
+  if (!(port >= 1 && port <= 65535)) return res.status(400).json({ error: "Port must be a number between 1 and 65535." });
+  smtp.port = port;
+  smtp.secure = b.secure === true || b.secure === "true" ? true : b.secure === false || b.secure === "false" ? false : null;
+  // a blank password keeps the saved one; clearPass removes it
+  smtp.pass = b.clearPass ? "" : (b.pass ? String(b.pass).slice(0, 500) : (prev.pass || ""));
+  res.json(publicSettings(db.updateSettings({ smtp })));
+});
 
 router.post("/settings", (req, res) => {
   const b = req.body || {};
@@ -127,7 +150,7 @@ router.post("/settings", (req, res) => {
       u.pricing[k] = n;
     }
   }
-  res.json(db.updateSettings(u));
+  res.json(publicSettings(db.updateSettings(u)));
 });
 
 // ---------- logo ----------
