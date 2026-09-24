@@ -42,8 +42,13 @@ function getTransport() {
 }
 
 function itemLines(q, cur) {
-  return q.items.map(i => `  ${i.qty} × ${i.title} — ${fmt(i.unit_cents * i.qty, cur)}`).join("\n");
+  const lines = q.items.map(i => `  ${i.qty} × ${i.title} — ${fmt(i.unit_cents * i.qty, cur)}`);
+  if (q.fulfillment === "ship") lines.push(`  Shipping — ${fmt(q.shipping_cents, cur)}`);
+  if (q.fulfillment === "pickup") lines.push("  Local pickup — free");
+  return lines.join("\n");
 }
+const payLine = (q) => q.payment && q.payment.url && q.payment.status !== "paid"
+  ? `\n\nPay online: ${q.payment.url}${q.fulfillment === "ship" ? "\nYou'll enter your shipping address at checkout." : ""}` : "";
 
 // Sends the customer copy and the business copy. Returns {customer, business} status strings.
 async function sendQuoteEmails(q, pdf, settings) {
@@ -60,7 +65,7 @@ async function sendQuoteEmails(q, pdf, settings) {
       to: q.customer.email,
       replyTo: settings.businessEmail || undefined,
       subject: `Your print estimate ${q.id} from ${shop}`,
-      text: `Hi ${q.customer.name},\n\nThanks for your request. Your estimate is attached.\n\n${itemLines(q, cur)}\n\nEstimated total: ${fmt(q.total_cents, cur)}\n\nReply to this email with any questions or to confirm your order.\n\n${shop}`,
+      text: `Hi ${q.customer.name},\n\nThanks for your request. Your estimate is attached.\n\n${itemLines(q, cur)}\n\nEstimated total: ${fmt(q.total_cents, cur)}${payLine(q)}\n\nReply to this email with any questions or to confirm your order.\n\n${shop}`,
       attachments: [attachment]
     });
     result.customer = "sent";
@@ -73,7 +78,7 @@ async function sendQuoteEmails(q, pdf, settings) {
         to: settings.businessEmail,
         replyTo: q.customer.email,
         subject: `New quote request ${q.id} — ${q.customer.name} (${fmt(q.total_cents, cur)})`,
-        text: `New quote request.\n\nName: ${q.customer.name}\nEmail: ${q.customer.email}\nPhone: ${q.customer.phone || "—"}\nSource: ${q.source}\n\n${itemLines(q, cur)}\n\nEstimated total: ${fmt(q.total_cents, cur)}\n\nNotes:\n${q.customer.notes || "—"}`,
+        text: `New quote request.\n\nName: ${q.customer.name}\nEmail: ${q.customer.email}\nPhone: ${q.customer.phone || "—"}\nSource: ${q.source}\nDelivery: ${q.fulfillment === "ship" ? "ship" : q.fulfillment === "pickup" ? "local pickup" : "—"}\n\n${itemLines(q, cur)}\n\nEstimated total: ${fmt(q.total_cents, cur)}\n\nNotes:\n${q.customer.notes || "—"}`,
         attachments: [attachment]
       });
       result.business = "sent";

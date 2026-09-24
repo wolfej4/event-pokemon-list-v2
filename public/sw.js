@@ -4,7 +4,7 @@
 // as they're fetched (network-first, falling back to cache when offline),
 // and design images are cached opportunistically the first time they load.
 
-const CACHE_NAME = "n3d-catalog-v2";
+const CACHE_NAME = "n3d-catalog-v3";
 const APP_SHELL = [
   "/",
   "/assets/theme.css",

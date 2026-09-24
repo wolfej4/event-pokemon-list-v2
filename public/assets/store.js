@@ -36,9 +36,14 @@
   function cartCount(){ var n = 0; for (var k in cart) if (bySlug[k]) n += cart[k]; return n; }
   function updateCount(){ $("quote-count").textContent = cartCount(); }
 
-  function toast(msg){
+  function toast(msg, ms){
     var t = $("toast"); t.textContent = msg; t.hidden = false;
-    clearTimeout(toast._t); toast._t = setTimeout(function(){ t.hidden = true; }, 1800);
+    clearTimeout(toast._t); toast._t = setTimeout(function(){ t.hidden = true; }, ms || 1800);
+  }
+  // Square sends customers back here with ?paid=<quote id> after checkout
+  if (params.get("paid")) {
+    toast("Thanks! Your payment for " + params.get("paid") + " went through. A receipt is on its way.", 6000);
+    try { params.delete("paid"); history.replaceState(null, "", location.pathname + (params.toString() ? "?" + params : "")); } catch(e){}
   }
 
   // ---------- load ----------
@@ -181,7 +186,7 @@
   });
 
   // ---------- quote drawer ----------
-  var form = { name:"", email:"", phone:"", notes:"" };
+  var form = { name:"", email:"", phone:"", notes:"", fulfillment:"" };
   $("open-quote").addEventListener("click", openDrawer);
   $("close-drawer").addEventListener("click", function(){ closeOverlay($("drawer")); });
   $("drawer").addEventListener("click", function(e){ if (e.target === this) closeOverlay(this); });
@@ -211,8 +216,13 @@
         '<div class="qty"><button type="button" data-dec="' + esc(s) + '" aria-label="Decrease quantity">\u2212</button><span>' + q +
         '</span><button type="button" data-inc="' + esc(s) + '" aria-label="Increase quantity">+</button></div></div>';
     }).join("");
+    var ship = form.fulfillment === "ship", shipCents = settings.shippingCents || 0;
     c.innerHTML = lines +
-      '<div class="total"><span>Estimated total</span><span class="v">' + money(total) + '</span></div>' +
+      '<fieldset class="fulfill"><legend>How do you want to get it?</legend>' +
+      '<label><input type="radio" name="fulfillment" value="ship"' + (ship ? " checked" : "") + '> Ship it to me <span class="muted">(' + (shipCents ? money(shipCents) : "free") + ')</span></label>' +
+      '<label><input type="radio" name="fulfillment" value="pickup"' + (form.fulfillment === "pickup" ? " checked" : "") + '> Local pickup <span class="muted">(free)</span></label></fieldset>' +
+      (ship && shipCents ? '<div class="subline"><span>Shipping</span><span>' + money(shipCents) + '</span></div>' : '') +
+      '<div class="total"><span>Estimated total</span><span class="v">' + money(total + (ship ? shipCents : 0)) + '</span></div>' +
       '<p class="fine">' + (anyEst ? "Includes estimated prices. " : "") + 'We\u2019ll email you a PDF of this estimate' + (kiosk ? '.' : ' and send a copy to our team.') + '</p>' +
       '<form id="quote-form" novalidate>' +
       '<div class="field"><label for="q-name">Name</label><input id="q-name" name="name" autocomplete="name" required value="' + esc(form.name) + '"></div>' +
@@ -225,6 +235,11 @@
   }
 
   $("drawer-content").addEventListener("input", function(e){ if (e.target.name in form) form[e.target.name] = e.target.value; });
+  $("drawer-content").addEventListener("change", function(e){
+    if (e.target.name !== "fulfillment") return;
+    form.fulfillment = e.target.value; renderDrawer();
+    var r = $("drawer-content").querySelector('input[name="fulfillment"]:checked'); if (r) r.focus();
+  });
   $("drawer-content").addEventListener("click", function(e){
     var b;
     if ((b = e.target.closest("[data-inc]"))) { cart[b.dataset.inc] = Math.min(999, cart[b.dataset.inc] + 1); }
@@ -239,11 +254,12 @@
     err.textContent = "";
     if (!form.name.trim()) { err.textContent = "Enter your name."; return f.name.focus(); }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) { err.textContent = "Enter a valid email address."; return f.email.focus(); }
+    if (!form.fulfillment) { err.textContent = "Choose shipping or local pickup."; return f.querySelector('input[name="fulfillment"]').focus(); }
     btn.disabled = true; btn.textContent = "Sending\u2026";
     fetch("/api/public/quotes", {
       method:"POST", headers:{ "Content-Type":"application/json" },
       body: JSON.stringify({
-        name: form.name, email: form.email, phone: form.phone, notes: form.notes,
+        name: form.name, email: form.email, phone: form.phone, notes: form.notes, fulfillment: form.fulfillment,
         website: f.website.value, kiosk: kiosk,
         items: Object.keys(cart).map(function(s){ return { slug:s, qty:cart[s] }; })
       })
@@ -251,13 +267,16 @@
       .then(function(res){
         if (!res.ok) throw new Error(res.j.error || "The quote didn't send. Try again.");
         cart = {}; saveCart(); render();
-        form = { name:"", email:"", phone:"", notes:"" };
-        var j = res.j;
+        form = { name:"", email:"", phone:"", notes:"", fulfillment:"" };
+        var j = res.j, pay = safeUrl(j.pay_url);
+        var payHtml = !pay ? '' : kiosk && j.pay_qr
+          ? '<div class="pay-qr"><div class="qr">' + j.pay_qr + '</div><p><strong>Scan with your phone to pay now.</strong><br>The payment link is in your email too.</p></div>'
+          : '<p><a class="btn primary pay" href="' + esc(pay) + '" rel="noopener">Pay ' + esc(j.total) + ' now</a></p>';
         $("drawer-content").innerHTML = '<div class="success"><h3>Estimate ' + esc(j.id) + ' sent</h3>' +
           '<p>' + (j.emailed ? "We emailed your PDF estimate. Check your inbox (and spam folder)." : "Your request is saved. We\u2019ll email you the estimate shortly.") +
-          ' Estimated total: <strong>' + esc(j.total) + '</strong>.</p>' +
+          ' Estimated total: <strong>' + esc(j.total) + '</strong>.</p>' + payHtml +
           (kiosk ? '' : '<a class="btn" href="' + esc(j.pdf_url) + '" target="_blank" rel="noopener">Open PDF</a>') +
-          '<button type="button" class="btn primary" id="new-quote">Start a new quote</button></div>';
+          '<button type="button" class="btn' + (pay ? '' : ' primary') + '" id="new-quote">Start a new quote</button></div>';
         $("new-quote").onclick = function(){ closeOverlay($("drawer")); };
       })
       .catch(function(ex){ err.textContent = ex.message; btn.disabled = false; btn.textContent = "Email my estimate"; });
@@ -267,7 +286,7 @@
   if (kiosk){
     var idleTimer;
     var reset = function(){
-      cart = {}; saveCart(); form = { name:"", email:"", phone:"", notes:"" };
+      cart = {}; saveCart(); form = { name:"", email:"", phone:"", notes:"", fulfillment:"" };
       $("detail").hidden = true; $("drawer").hidden = true; document.body.style.overflow = "";
       $("search").value = ""; filter = { cat:"all", q:"" };
       [].forEach.call(document.querySelectorAll(".chip"), function(c){ c.classList.toggle("active", c.dataset.cat === "all"); });

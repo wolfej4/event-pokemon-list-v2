@@ -87,6 +87,15 @@ Behind HTTPS (Nginx Proxy Manager, Traefik, Cloudflare Tunnel), set
   included) in `db.json`. Click **Use environment variables instead** to go back.
 - Square token scopes: `ITEMS_READ`, `ITEMS_WRITE`, and `MERCHANT_PROFILE_READ`
   (for the connection test).
+- **Payment links** (admin → Square → Payment links): each new quote gets a
+  Square checkout link, shown as a Pay now button, a QR code on the kiosk, and
+  in the email and PDF. Customers choose shipping (flat rate, set on the
+  Pricing tab) or free local pickup; Square collects the shipping address at
+  checkout. Prices are treated as tax-included. The Quotes tab checks Square
+  for payments each time it loads and shows the shipping address once paid.
+  Extra token scopes: `ORDERS_READ`, `ORDERS_WRITE`, `PAYMENTS_WRITE` (a personal
+  access token already has them). `SQUARE_LOCATION_ID` picks the location if
+  you don't choose one in admin.
 - Admin logins are in memory, so a container restart logs you out. Nothing else is lost.
 - Quote submissions are rate limited per IP (8 per 10 minutes) and have a
   honeypot field for bots.

@@ -91,6 +91,7 @@
             <div class="field"><label for="p-markupPct">Markup (%)</label><input id="p-markupPct" type="number" step="1" min="0"></div>
             <div class="field"><label for="p-minPrice">Minimum price ($)</label><input id="p-minPrice" type="number" step="0.01" min="0"></div>
             <div class="field"><label for="p-roundTo">Round up to nearest ($, 0 = off)</label><input id="p-roundTo" type="number" step="0.25" min="0"></div>
+            <div class="field"><label for="p-shipping">Shipping per order ($, local pickup is free)</label><input id="p-shipping" type="number" step="0.01" min="0"></div>
           </div>
           <button class="btn primary" type="submit">Save pricing</button>
           <span class="status inline" id="pricing-status"></span>
@@ -107,9 +108,10 @@
     <section data-panel="quotes" hidden>
       <div class="head"><div><h2>Quote requests</h2><p class="sub" id="quote-summary"></p></div>
         <div class="row"><a class="btn" href="/api/admin/quotes.csv">Export CSV</a></div></div>
+      <p class="status bad" id="quote-pay-error" role="status" hidden></p>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Quote</th><th>Customer</th><th>Items</th><th>Total</th><th>Email</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Quote</th><th>Customer</th><th>Items</th><th>Total</th><th>Email</th><th>Payment</th><th>Status</th><th></th></tr></thead>
           <tbody id="quote-rows"></tbody>
         </table>
       </div>
@@ -126,6 +128,15 @@
           <button class="btn" id="sq-test" type="button">Test connection</button>
           <div id="sq-locations" class="status"></div>
         </div>
+        <form class="panel" id="sq-pay-form">
+          <h3>Payment links</h3>
+          <p class="sub">Adds a Square checkout link to each new quote: a Pay now button on the customer's phone, a QR code on the kiosk, and a link in the email and PDF. Shipping is added at checkout when they choose it. Prices already include tax.</p>
+          <label class="check"><input type="checkbox" id="sq-pay-on"> Add a payment link to new quotes</label>
+          <div class="field" style="margin-top:10px"><label for="sq-location">Square location payments go to</label>
+            <select id="sq-location"><option value="">First active location</option></select></div>
+          <button class="btn primary" type="submit">Save</button>
+          <span class="status inline" id="sq-pay-status"></span>
+        </form>
         <div class="panel">
           <h3>Push catalog</h3>
           <label class="check"><input type="checkbox" id="sq-overwrite"> Update prices in Square when re-pushing</label>

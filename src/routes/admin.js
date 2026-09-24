@@ -11,6 +11,7 @@ const { buildQuotePdf } = require("../pdf");
 const { checkPassword, requireAdmin } = require("../auth");
 const rateLimit = require("../rateLimit");
 const logo = require("../logo");
+const payments = require("../payments");
 
 const router = express.Router();
 
@@ -35,7 +36,7 @@ router.get("/status", (req, res) => {
     smtp: mailer.configured(),
     smtpSource: mailer.config().source,
     square: square.configured(),
-    squareEnv: process.env.SQUARE_ENV === "sandbox" ? "sandbox" : "production",
+    squareEnv: square.isSandbox() ? "sandbox" : "production",
     spoolman: spoolman.configured(),
     storageError: db.writeError()
   });
@@ -131,6 +132,8 @@ router.post("/settings", (req, res) => {
   if (b.kioskIdleSeconds !== undefined) u.kioskIdleSeconds = Math.min(3600, Math.max(15, parseInt(b.kioskIdleSeconds, 10) || 90));
   if (b.squareOverwritePrices !== undefined) u.squareOverwritePrices = !!b.squareOverwritePrices;
   if (b.logoShowName !== undefined) u.logoShowName = !!b.logoShowName;
+  if (b.squarePaymentLinks !== undefined) u.squarePaymentLinks = !!b.squarePaymentLinks;
+  if (b.squareLocationId !== undefined) u.squareLocationId = String(b.squareLocationId || "").trim().slice(0, 64);
   if (b.spoolmanLowStockGrams !== undefined) {
     const n = Number(b.spoolmanLowStockGrams);
     if (!Number.isFinite(n) || n < 0) return res.status(400).json({ error: "Low-stock threshold must be 0 or more." });
@@ -143,7 +146,7 @@ router.post("/settings", (req, res) => {
   }
   if (b.pricing) {
     u.pricing = {};
-    for (const k of ["baseFee", "perGram", "perHour", "markupPct", "minPrice", "roundTo"]) {
+    for (const k of ["baseFee", "perGram", "perHour", "markupPct", "minPrice", "roundTo", "shipping"]) {
       if (b.pricing[k] === undefined) continue;
       const n = Number(b.pricing[k]);
       if (!Number.isFinite(n) || n < 0) return res.status(400).json({ error: `Pricing value "${k}" must be 0 or more.` });
@@ -221,9 +224,25 @@ router.get("/n3d/check", async (req, res) => {
 });
 
 // ---------- quotes ----------
-router.get("/quotes", (req, res) => {
+router.get("/quotes", async (req, res) => {
+  // check Square for newly paid links; a Square outage shouldn't hide the list
+  let paymentError = null;
+  if (square.configured()) {
+    try { await payments.refreshStatuses(db.allQuotes().slice(0, 300)); }
+    catch (e) { paymentError = e.message; }
+  }
   const cur = db.getSettings().currency;
-  res.json({ data: db.allQuotes().map(q => Object.assign({}, q, { total: fmt(q.total_cents, cur), token: undefined })) });
+  res.json({ paymentError, data: db.allQuotes().map(q => Object.assign({}, q, { total: fmt(q.total_cents, cur), token: undefined })) });
+});
+
+router.post("/quotes/:id/payment-link", async (req, res) => {
+  const q = db.getQuote(req.params.id);
+  if (!q) return res.status(404).json({ error: "not_found" });
+  if (!square.configured()) return res.status(400).json({ error: "SQUARE_ACCESS_TOKEN isn't set." });
+  if (q.payment && q.payment.url) return res.json({ ok: true, payment: q.payment });
+  const saved = await payments.attachLink(q, req);
+  if (saved.payment.error) return res.status(502).json({ error: saved.payment.error });
+  res.json({ ok: true, payment: saved.payment });
 });
 
 router.post("/quotes/:id", (req, res) => {
@@ -258,11 +277,13 @@ function csvCell(v) {
   return /[",\n]/.test(safe) ? '"' + safe.replace(/"/g, '""') + '"' : safe;
 }
 router.get("/quotes.csv", (req, res) => {
-  const rows = [["id", "created_at", "status", "source", "name", "email", "phone", "items", "total", "notes", "customer_email", "business_email"]];
+  const rows = [["id", "created_at", "status", "source", "name", "email", "phone", "items", "total", "notes", "customer_email", "business_email", "delivery", "shipping", "payment", "ship_to"]];
   for (const q of db.allQuotes()) {
     rows.push([q.id, q.created_at, q.status, q.source, q.customer.name, q.customer.email, q.customer.phone,
       q.items.map(i => `${i.qty}x ${i.title}`).join("; "), (q.total_cents / 100).toFixed(2), q.customer.notes,
-      q.email && q.email.customer, q.email && q.email.business]);
+      q.email && q.email.customer, q.email && q.email.business,
+      q.fulfillment || "", q.shipping_cents != null ? (q.shipping_cents / 100).toFixed(2) : "",
+      q.payment ? (q.payment.status || "error") : "", q.payment && q.payment.ship_to]);
   }
   res.setHeader("Content-Type", "text/csv");
   res.setHeader("Content-Disposition", 'attachment; filename="quotes.csv"');
