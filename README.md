@@ -26,6 +26,9 @@ panel for pricing, N3D sync, and pushing to Square. Light and dark mode on both.
 - **Orders:** every order with payment status, shipping address once paid,
   fulfillment status (new/printing/ready/shipped/completed/cancelled), PDF,
   resend email, CSV export.
+  A red count on the Orders tab (and in the browser tab title) shows orders
+  still marked "new"; click **Turn on notifications** for an alert when one
+  comes in while the admin is open. Notifications need the admin on HTTPS.
 - **Square:** test connection, push everything (runs in the background with a
   progress bar). Items get name, description, photo, and price. Designs priced
   at $0 go up as variable-price items. Re-pushing updates the existing item

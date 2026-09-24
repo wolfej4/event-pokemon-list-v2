@@ -43,6 +43,12 @@ app.use("/api/public", require("./src/routes/public"));
 app.use("/api/admin", require("./src/routes/admin"));
 app.use("/api", (req, res) => res.status(404).json({ error: "not_found" }));
 
+// lets the admin service worker (served from /admin/sw.js) control /admin itself
+app.get("/admin/sw.js", (req, res) => {
+  res.setHeader("Service-Worker-Allowed", "/admin");
+  res.setHeader("Cache-Control", "no-cache");
+  res.sendFile(path.join(__dirname, "admin", "sw.js"));
+});
 app.use("/admin", express.static(path.join(__dirname, "admin")));
 app.use(express.static(path.join(__dirname, "public")));
 app.get(/^\/admin(\/.*)?$/, (req, res) => res.sendFile(path.join(__dirname, "admin", "index.html")));

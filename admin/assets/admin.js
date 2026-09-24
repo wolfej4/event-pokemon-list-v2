@@ -19,7 +19,7 @@
   function setStatus(el, msg, kind){ el.textContent = msg; el.className = el.className.replace(/\b(ok|bad)\b/g, "").trim() + (kind ? " " + kind : ""); }
 
   // ---------- auth ----------
-  function showLogin(){ $("app").hidden = true; $("login").hidden = false; $("pw").focus(); }
+  function showLogin(){ stopOrderWatch(); $("app").hidden = true; $("login").hidden = false; $("pw").focus(); }
   function showApp(){ $("login").hidden = true; $("app").hidden = false; boot(); }
   $("login-form").addEventListener("submit", function(e){
     e.preventDefault(); $("login-err").textContent = "";
@@ -44,6 +44,8 @@
     Promise.all([api("/settings"), api("/status")]).then(function(r){
       settings = r[0]; status = r[1];
       fillSettings(); fillSmtp(); fillPricing(); renderConn(); renderLogos(); renderStorageAlert();
+      startOrderWatch();
+      if (location.hash === "#orders") openOrdersTab();
       if (settings.businessName) $("bar-title").textContent = settings.businessName + " admin";
       return loadDesigns();
     }).catch(function(e){ setStatus($("sync-status"), e.message, "bad"); });
@@ -322,7 +324,7 @@
   $("quote-rows").addEventListener("change", function(e){
     if (!e.target.classList.contains("q-status")) return;
     var id = e.target.closest("tr").dataset.id;
-    api("/quotes/" + encodeURIComponent(id), { method:"POST", body:{ status: e.target.value } });
+    api("/quotes/" + encodeURIComponent(id), { method:"POST", body:{ status: e.target.value } }).then(checkNewOrders);
   });
   var ORDER_STATUSES = ["new","printing","ready","shipped","completed","cancelled"];
   function payCell(q){
@@ -349,6 +351,79 @@
       .catch(function(err){ note.textContent = err.message; })
       .finally(function(){ b.disabled = false; });
   });
+
+  // ---------- new-order badge and notifications ----------
+  var SEEN_KEY = "n3dcat-admin-last-order", orderTimer = null, baseTitle = document.title;
+  var canNotify = "Notification" in window && window.isSecureContext;
+  var swReg = null;
+  if ("serviceWorker" in navigator && window.isSecureContext) {
+    navigator.serviceWorker.register("/admin/sw.js", { scope: "/admin" }).then(function(r){ swReg = r; }).catch(function(){});
+    navigator.serviceWorker.addEventListener("message", function(e){ if (e.data && e.data.type === "open-orders") openOrdersTab(); });
+  }
+  function openOrdersTab(){ document.querySelector('[data-tab="quotes"]').click(); }
+  function lastSeen(){ try { return localStorage.getItem(SEEN_KEY); } catch(e){ return null; } }
+  function setLastSeen(v){ try { localStorage.setItem(SEEN_KEY, v); } catch(e){} }
+
+  function renderNotifyControls(){
+    var btn = $("notify-on"), note = $("notify-note");
+    if (!canNotify) {
+      btn.hidden = true; note.hidden = false;
+      note.textContent = window.isSecureContext ? "This browser doesn\u2019t support notifications. The red count on the Orders tab still updates."
+        : "Browser notifications need the admin opened over HTTPS. The red count on the Orders tab still updates.";
+      return;
+    }
+    btn.hidden = Notification.permission !== "default";
+    note.hidden = Notification.permission !== "denied";
+    note.textContent = "Notifications are blocked for this site. Allow them in your browser\u2019s site settings to get new-order alerts.";
+  }
+  $("notify-on").addEventListener("click", function(){
+    Notification.requestPermission().then(function(p){
+      renderNotifyControls();
+      if (p === "granted") notify("Notifications are on", "You\u2019ll get an alert here when a new order comes in.", "test");
+    });
+  });
+
+  function notify(title, body, tag){
+    if (!canNotify || Notification.permission !== "granted") return;
+    var opts = { body: body, tag: tag, icon: "/admin/assets/icon-192.png", badge: "/admin/assets/icon-192.png" };
+    // Android Chrome only allows notifications from a service worker
+    if (swReg && swReg.showNotification) return swReg.showNotification(title, opts).catch(function(){});
+    try {
+      var n = new Notification(title, opts);
+      n.onclick = function(){ window.focus(); openOrdersTab(); n.close(); };
+    } catch(e){}
+  }
+
+  function checkNewOrders(){
+    return api("/orders/new").then(function(r){
+      var badge = $("orders-badge");
+      badge.hidden = !r.count;
+      badge.textContent = r.count > 99 ? "99+" : r.count;
+      badge.setAttribute("aria-label", r.count + " new orders");
+      document.title = (r.count ? "(" + r.count + ") " : "") + baseTitle;
+      if (navigator.setAppBadge) (r.count ? navigator.setAppBadge(r.count) : navigator.clearAppBadge()).catch(function(){});
+
+      var seen = lastSeen(), newest = r.orders.length ? r.orders[0].created_at : null;
+      if (!seen) { setLastSeen(newest || new Date().toISOString()); return; } // first run: don't alert for old orders
+      var fresh = r.orders.filter(function(o){ return o.created_at > seen; });
+      if (!fresh.length) return;
+      setLastSeen(fresh[0].created_at);
+      if (fresh.length === 1) {
+        var o = fresh[0];
+        notify("New order " + o.id, o.name + " \u2014 " + o.total + (o.fulfillment === "ship" ? ", ship" : o.fulfillment === "pickup" ? ", pickup" : ""), o.id);
+      } else {
+        notify(fresh.length + " new orders", fresh.map(function(o){ return o.name + " (" + o.total + ")"; }).join(", "), "orders");
+      }
+      if (!$("quote-rows").closest("[data-panel]").hidden) loadQuotes();
+    }).catch(function(){});
+  }
+  function startOrderWatch(){
+    stopOrderWatch(); renderNotifyControls(); checkNewOrders();
+    orderTimer = setInterval(checkNewOrders, 30000);
+  }
+  function stopOrderWatch(){ if (orderTimer) clearInterval(orderTimer); orderTimer = null; }
+  // check right away when the tab comes back into view instead of waiting for the next tick
+  document.addEventListener("visibilitychange", function(){ if (!document.hidden && orderTimer) checkNewOrders(); });
 
   // ---------- inventory / spoolman ----------
   var spInited = false;

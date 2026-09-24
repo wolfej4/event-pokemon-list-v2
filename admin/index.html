@@ -13,6 +13,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&display=swap">
 <link rel="stylesheet" href="/assets/theme.css">
 <link rel="stylesheet" href="/admin/assets/admin.css">
+<link rel="manifest" href="/admin/manifest.json">
 </head>
 <body>
 
@@ -31,7 +32,7 @@
     <nav class="tabs" role="tablist">
       <button role="tab" data-tab="designs" class="active" type="button">Designs</button>
       <button role="tab" data-tab="pricing" type="button">Pricing</button>
-      <button role="tab" data-tab="quotes" type="button">Orders</button>
+      <button role="tab" data-tab="quotes" type="button">Orders <span class="badge" id="orders-badge" hidden></span></button>
       <button role="tab" data-tab="square" type="button">Square</button>
       <button role="tab" data-tab="inventory" type="button">Inventory</button>
       <button role="tab" data-tab="settings" type="button">Settings</button>
@@ -107,7 +108,9 @@
     <!-- orders -->
     <section data-panel="quotes" hidden>
       <div class="head"><div><h2>Orders</h2><p class="sub" id="quote-summary"></p></div>
-        <div class="row"><a class="btn" href="/api/admin/quotes.csv">Export CSV</a></div></div>
+        <div class="row"><button class="btn" id="notify-on" type="button" hidden>Turn on notifications</button>
+          <a class="btn" href="/api/admin/quotes.csv">Export CSV</a></div></div>
+      <p class="sub" id="notify-note" hidden></p>
       <p class="status bad" id="quote-pay-error" role="status" hidden></p>
       <div class="table-wrap">
         <table>
