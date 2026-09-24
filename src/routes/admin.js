@@ -46,8 +46,19 @@ router.get("/status", (req, res) => {
 });
 
 // ---------- designs ----------
+// Square IDs are kept per environment so testing in sandbox never overwrites
+// (and later duplicates) the items in the live catalog. Designs pushed before
+// this existed only have top-level IDs, and those were always production.
+const SQ_FIELDS = ["square_item_id", "square_variation_id", "square_image_src", "square_pushed_at"];
+function squareIdsFor(d, env) {
+  if (d.square_by_env) return d.square_by_env[env] || {};
+  if (env === "production" && d.square_item_id) { const o = {}; SQ_FIELDS.forEach(k => { o[k] = d[k]; }); return o; }
+  return {};
+}
 function toAdmin(d, s) {
-  return Object.assign({}, d, {
+  const ids = squareIdsFor(d, square.envName());
+  const current = {}; SQ_FIELDS.forEach(k => { current[k] = ids[k] || null; });
+  return Object.assign({}, d, current, {
     formula_cents: formulaCents(d, s.pricing),
     effective_cents: unitCents(d, s.pricing)
   });
@@ -351,11 +362,15 @@ async function pushOne(slug) {
   const d = db.getDesign(slug);
   if (!d) throw new Error("not found");
   const s = db.getSettings();
+  const env = square.envName();
+  const ids = squareIdsFor(d, env);
   try {
-    const out = await square.pushDesign(d, unitCents(d, s.pricing), {
-      currency: s.currency, overwritePrice: s.squareOverwritePrices
-    });
-    return db.upsertDesign(slug, out);
+    const out = await square.pushDesign(
+      Object.assign({}, d, { square_item_id: ids.square_item_id || null, square_image_src: ids.square_image_src || null }),
+      unitCents(d, s.pricing), { currency: s.currency, overwritePrice: s.squareOverwritePrices });
+    const saved = {}; SQ_FIELDS.forEach(k => { saved[k] = out[k] !== undefined ? out[k] : ids[k] || null; });
+    const byEnv = Object.assign({ production: squareIdsFor(d, "production"), sandbox: squareIdsFor(d, "sandbox") }, { [env]: saved });
+    return db.upsertDesign(slug, Object.assign({}, saved, { square_by_env: byEnv, square_error: null }));
   } catch (e) {
     db.upsertDesign(slug, { square_error: e.message });
     throw e;
