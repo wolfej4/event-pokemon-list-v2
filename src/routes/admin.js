@@ -49,7 +49,7 @@ router.get("/status", (req, res) => {
 // Square IDs are kept per environment so testing in sandbox never overwrites
 // (and later duplicates) the items in the live catalog. Designs pushed before
 // this existed only have top-level IDs, and those were always production.
-const SQ_FIELDS = ["square_item_id", "square_variation_id", "square_image_src", "square_pushed_at"];
+const SQ_FIELDS = ["square_item_id", "square_variation_id", "square_image_src", "square_image_ok", "square_pushed_at"];
 function squareIdsFor(d, env) {
   if (d.square_by_env) return d.square_by_env[env] || {};
   if (env === "production" && d.square_item_id) { const o = {}; SQ_FIELDS.forEach(k => { o[k] = d[k]; }); return o; }
@@ -389,16 +389,20 @@ async function pushOne(slug) {
     throw e;
   }
   const created = item.created; delete item.created;
-  let saved = saveIds(created ? Object.assign(item, { square_image_src: null }) : item, { square_error: null });
+  let saved = saveIds(created ? Object.assign(item, { square_image_src: null, square_image_ok: false }) : item, { square_error: null });
 
-  // only upload the photo when it's new, N3D changed it, or the last try failed
-  if (d.image_url && (created || ids.square_image_src !== d.image_url)) {
+  // Every push records what happened to the photo, so it never fails silently.
+  // Upload when the item is new, N3D changed the image, or it hasn't been
+  // confirmed on the item yet (including items pushed before photos worked).
+  if (!d.image_url) {
+    saved = db.upsertDesign(slug, { square_image_error: "N3D has no image for this design" });
+  } else if (created || ids.square_image_src !== d.image_url || !ids.square_image_ok) {
     try {
       await square.uploadImage(item.square_item_id, d.image_url, String(d.title || slug));
-      saved = saveIds({ square_image_src: d.image_url }, { square_image_error: null });
+      saved = saveIds({ square_image_src: d.image_url, square_image_ok: true }, { square_image_error: null });
     } catch (e) {
       console.error("[square] photo upload failed for " + slug + ":", e.message);
-      saved = db.upsertDesign(slug, { square_image_error: e.message });
+      saved = saveIds({ square_image_ok: false }, { square_image_error: e.message });
     }
   } else if (saved.square_image_error) {
     saved = db.upsertDesign(slug, { square_image_error: null });

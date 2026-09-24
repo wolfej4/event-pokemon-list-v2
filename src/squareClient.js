@@ -2,6 +2,7 @@
 // Pushes designs to Square as catalog ITEMs with one ITEM_VARIATION and a photo.
 // Needs a token with ITEMS_READ + ITEMS_WRITE (+ MERCHANT_PROFILE_READ for the connection test).
 const crypto = require("crypto");
+const sharp = require("sharp");
 
 const VERSION = process.env.SQUARE_VERSION || "2025-01-23";
 // SQUARE_ENVIRONMENT is what the Unraid compose file sets
@@ -140,25 +141,25 @@ function setPrice(varData, cents, currency) {
   }
 }
 
-// Square only takes JPEG, PNG or GIF (max 15 MB), so check the real format
-// from the file's first bytes rather than trusting the content-type header.
-function sniffImage(buf) {
-  if (buf.length > 3 && buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return { type: "image/jpeg", ext: "jpg" };
-  if (buf.length > 8 && buf.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]))) return { type: "image/png", ext: "png" };
-  if (buf.length > 6 && /^GIF8[79]a$/.test(buf.slice(0, 6).toString("latin1"))) return { type: "image/gif", ext: "gif" };
-  if (buf.length > 12 && buf.slice(0, 4).toString("latin1") === "RIFF" && buf.slice(8, 12).toString("latin1") === "WEBP") return { unsupported: "WebP" };
-  if (buf.length > 12 && /^ftyp(avif|avis)/.test(buf.slice(4, 12).toString("latin1"))) return { unsupported: "AVIF" };
-  return { unsupported: "an unrecognized format" };
+// Square only takes JPEG, PNG or GIF (max 15 MB), and N3D images can be
+// WebP/AVIF, so every photo is converted to a JPEG on a white background.
+async function toSquareJpeg(buf, contentType) {
+  try {
+    return await sharp(buf, { failOn: "none" })
+      .rotate()
+      .resize({ width: 2000, height: 2000, fit: "inside", withoutEnlargement: true })
+      .flatten({ background: "#ffffff" })
+      .jpeg({ quality: 88, mozjpeg: true })
+      .toBuffer();
+  } catch (e) {
+    throw new Error("couldn't read the design image (" + (contentType || "unknown type") + "): " + e.message);
+  }
 }
 
 async function uploadImage(itemId, imageUrl, name) {
-  // ask image CDNs that negotiate formats for something Square accepts
-  const img = await fetch(imageUrl, { headers: { Accept: "image/jpeg,image/png,image/gif;q=0.9,*/*;q=0.1" } });
-  if (!img.ok) throw new Error("couldn't download the design image (" + img.status + ")");
-  const buf = Buffer.from(await img.arrayBuffer());
-  const kind = sniffImage(buf);
-  if (kind.unsupported) throw new Error("the design image is " + kind.unsupported + ", and Square only accepts JPEG, PNG or GIF");
-  if (buf.length > 15 * 1024 * 1024) throw new Error("the design image is over Square's 15 MB limit");
+  const img = await fetch(imageUrl);
+  if (!img.ok) throw new Error("couldn't download the design image from N3D (HTTP " + img.status + ")");
+  const jpeg = await toSquareJpeg(Buffer.from(await img.arrayBuffer()), img.headers.get("content-type"));
 
   const form = new FormData();
   // Square's multipart parts are "request" (JSON string) and "image_file"
@@ -168,13 +169,20 @@ async function uploadImage(itemId, imageUrl, name) {
     is_primary: true,
     image: { type: "IMAGE", id: "#img", image_data: { name: name.slice(0, 250) } }
   }));
-  form.append("image_file", new Blob([buf], { type: kind.type }), "design." + kind.ext);
+  form.append("image_file", new Blob([jpeg], { type: "image/jpeg" }), "design.jpg");
 
   const res = await fetch(base() + "/v2/catalog/images", { method: "POST", headers: authHeaders(), body: form });
   if (res.status === 401) throw authError();
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error("Square rejected the image: " + ((json.errors && json.errors.map(x => x.detail || x.code).join("; ")) || res.status));
-  return json.image && json.image.id;
+  if (!res.ok) throw new Error("Square rejected the photo: " + ((json.errors && json.errors.map(x => x.detail || x.code).join("; ")) || res.status));
+  const imageId = json.image && json.image.id;
+  if (!imageId) throw new Error("Square didn't return the uploaded photo");
+
+  // make sure it actually ended up on the item
+  const item = (await call("GET", "/v2/catalog/object/" + encodeURIComponent(itemId))).object;
+  const ids = (item && item.item_data && item.item_data.image_ids) || [];
+  if (!ids.includes(imageId)) throw new Error("Square accepted the photo but didn't attach it to the item");
+  return imageId;
 }
 
 /**
