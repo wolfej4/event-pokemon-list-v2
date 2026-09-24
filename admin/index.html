@@ -31,7 +31,7 @@
     <nav class="tabs" role="tablist">
       <button role="tab" data-tab="designs" class="active" type="button">Designs</button>
       <button role="tab" data-tab="pricing" type="button">Pricing</button>
-      <button role="tab" data-tab="quotes" type="button">Quotes</button>
+      <button role="tab" data-tab="quotes" type="button">Orders</button>
       <button role="tab" data-tab="square" type="button">Square</button>
       <button role="tab" data-tab="inventory" type="button">Inventory</button>
       <button role="tab" data-tab="settings" type="button">Settings</button>
@@ -104,14 +104,14 @@
       </div>
     </section>
 
-    <!-- quotes -->
+    <!-- orders -->
     <section data-panel="quotes" hidden>
-      <div class="head"><div><h2>Quote requests</h2><p class="sub" id="quote-summary"></p></div>
+      <div class="head"><div><h2>Orders</h2><p class="sub" id="quote-summary"></p></div>
         <div class="row"><a class="btn" href="/api/admin/quotes.csv">Export CSV</a></div></div>
       <p class="status bad" id="quote-pay-error" role="status" hidden></p>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>Quote</th><th>Customer</th><th>Items</th><th>Total</th><th>Email</th><th>Payment</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Order</th><th>Customer</th><th>Items</th><th>Total</th><th>Email</th><th>Payment</th><th>Status</th><th></th></tr></thead>
           <tbody id="quote-rows"></tbody>
         </table>
       </div>
@@ -130,8 +130,8 @@
         </div>
         <form class="panel" id="sq-pay-form">
           <h3>Payment links</h3>
-          <p class="sub">Adds a Square checkout link to each new quote: a Pay now button on the customer's phone, a QR code on the kiosk, and a link in the email and PDF. Shipping is added at checkout when they choose it. Prices already include tax.</p>
-          <label class="check"><input type="checkbox" id="sq-pay-on"> Add a payment link to new quotes</label>
+          <p class="sub">Customers pay through Square when they check out: on their own phone they go straight to Square's checkout, and the kiosk shows a QR code to scan. The link is also in the confirmation email and PDF. Shipping is added at checkout when they choose it. Prices already include tax.</p>
+          <label class="check"><input type="checkbox" id="sq-pay-on"> Take payment at checkout</label>
           <div class="field" style="margin-top:10px"><label for="sq-location">Square location payments go to</label>
             <select id="sq-location"><option value="">First active location</option></select></div>
           <button class="btn primary" type="submit">Save</button>
@@ -191,11 +191,11 @@
       <div class="head"><div><h2>Settings</h2></div></div>
       <div class="split">
         <form class="panel" id="settings-form">
-          <h3>Storefront and quotes</h3>
+          <h3>Storefront and orders</h3>
           <div class="field"><label for="s-businessName">Business name</label><input id="s-businessName"></div>
           <div class="field"><label for="s-tagline">Storefront tagline</label><input id="s-tagline"></div>
           <div class="grid2">
-            <div class="field"><label for="s-businessEmail">Email for your copy of each quote</label><input id="s-businessEmail" type="email"></div>
+            <div class="field"><label for="s-businessEmail">Email for your copy of each order</label><input id="s-businessEmail" type="email"></div>
             <div class="field"><label for="s-businessPhone">Phone (on the PDF)</label><input id="s-businessPhone"></div>
             <div class="field"><label for="s-currency">Currency</label><input id="s-currency" maxlength="3"></div>
             <div class="field"><label for="s-kioskIdleSeconds">Kiosk reset after (seconds idle)</label><input id="s-kioskIdleSeconds" type="number" min="15"></div>
@@ -212,7 +212,7 @@
           <button class="btn" id="smtp-test" type="button">Test email</button></div>
           <p class="status" id="conn-status"></p>
           <h3 style="margin-top:22px">Kiosk mode</h3>
-          <p class="sub">For a booth tablet: open <code>/?kiosk=1</code> once on that device. It hides outside shop links, uses larger buttons, and clears the quote after inactivity. Open <code>/?kiosk=0</code> to turn it off.</p>
+          <p class="sub">For a booth tablet: open <code>/?kiosk=1</code> once on that device. It hides outside shop links, uses larger buttons, and clears the cart after inactivity. Open <code>/?kiosk=0</code> to turn it off.</p>
         </div>
       </div>
 
@@ -228,7 +228,7 @@
               <option value="true">SSL/TLS</option>
               <option value="false">STARTTLS or none</option>
             </select></div>
-          <div class="field"><label for="smtp-from">From address</label><input id="smtp-from" placeholder="Shop Name &lt;quotes@example.com&gt;"></div>
+          <div class="field"><label for="smtp-from">From address</label><input id="smtp-from" placeholder="Shop Name &lt;orders@example.com&gt;"></div>
           <div class="field"><label for="smtp-user">Username</label><input id="smtp-user" autocomplete="off"></div>
           <div class="field"><label for="smtp-pass">Password</label><input id="smtp-pass" type="password" autocomplete="new-password"></div>
         </div>
@@ -244,7 +244,7 @@
 
       <div class="panel" style="margin-top:18px">
         <h3>Logo</h3>
-        <p class="sub">Shown in the store header and on quote PDFs. PNG or SVG with a transparent background works best, up to 2 MB. Only PNG and JPG logos can be printed on the PDF.</p>
+        <p class="sub">Shown in the store header and on order PDFs. PNG or SVG with a transparent background works best, up to 2 MB. Only PNG and JPG logos can be printed on the PDF.</p>
         <div class="logo-grid">
           <div class="logo-slot" data-variant="light">
             <div class="logo-preview light-bg"><img alt="" hidden><span class="muted">No logo</span></div>

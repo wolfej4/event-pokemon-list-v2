@@ -247,7 +247,7 @@ router.post("/quotes/:id/payment-link", async (req, res) => {
 
 router.post("/quotes/:id", (req, res) => {
   const status = String((req.body || {}).status || "");
-  if (!["new", "contacted", "won", "lost"].includes(status)) return res.status(400).json({ error: "bad status" });
+  if (!["new", "printing", "ready", "shipped", "completed", "cancelled"].includes(status)) return res.status(400).json({ error: "bad status" });
   const q = db.updateQuote(req.params.id, { status });
   if (!q) return res.status(404).json({ error: "not_found" });
   res.json({ ok: true });

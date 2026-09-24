@@ -1,6 +1,6 @@
 # N3D Catalog
 
-Customer-facing catalog of your N3D designs with a quote builder, plus an admin
+Customer-facing shop for your N3D designs with a cart and Square checkout, plus an admin
 panel for pricing, N3D sync, and pushing to Square. Light and dark mode on both.
 
 ## What it does
@@ -8,9 +8,12 @@ panel for pricing, N3D sync, and pushing to Square. Light and dark mode on both.
 **Storefront (`/`)**
 - Browse, search (name, type, Pokédex #), and filter designs. Each card shows a
   strip of the design's actual filament colors.
-- Add designs to a quote, change quantities, and submit name/email/phone/notes.
-- The server prices every line itself, builds a PDF estimate, and emails it to
-  the customer and to you. The customer can also open the PDF right away.
+- Add designs to a cart, change quantities, choose shipping (flat rate) or free
+  local pickup, and check out with name/email/phone/notes.
+- The server prices every line itself, saves the order, and (with payment links
+  on) sends the customer to Square's checkout. On the kiosk it shows a QR code
+  so they pay on their own phone. An order summary PDF is emailed to the
+  customer and to you.
 - Light/dark toggle in the header. Follows the device setting until someone
   picks one, then remembers it.
 
@@ -20,15 +23,16 @@ panel for pricing, N3D sync, and pushing to Square. Light and dark mode on both.
 - **Pricing:** formula for any design without a custom price:
   `(base fee + grams × per-gram + hours × per-hour) × (1 + markup%)`, with a
   minimum and optional round-up. Live preview as you type.
-- **Quotes:** every request with status (new/contacted/won/lost), PDF, resend
-  email, CSV export.
+- **Orders:** every order with payment status, shipping address once paid,
+  fulfillment status (new/printing/ready/shipped/completed/cancelled), PDF,
+  resend email, CSV export.
 - **Square:** test connection, push everything (runs in the background with a
   progress bar). Items get name, description, photo, and price. Designs priced
   at $0 go up as variable-price items. Re-pushing updates the existing item
   instead of duplicating it and only re-uploads the photo if N3D changed it.
   Turn off "Update prices in Square when re-pushing" if you'd rather manage
   prices in Square after the first push.
-- **Settings:** business name, tagline, your quote email, phone, PDF fine print,
+- **Settings:** business name, tagline, your order email, phone, PDF fine print,
   kiosk timeout, and connection tests.
 - **Inventory:** if `SPOOLMAN_URL` is set, compares the filament colors your designs
   actually use against your [Spoolman](https://github.com/Donkie/Spoolman) stock,
@@ -37,7 +41,7 @@ panel for pricing, N3D sync, and pushing to Square. Light and dark mode on both.
   and match sensitivity are both adjustable). Run it on demand with **Check stock
   now** — it's not automatic, since Spoolman weights only update as you print.
 - **Logo:** upload under Settings. Optional second version for dark mode. Shown in
-  the store header, admin bar, and on quote PDFs (PNG/JPG only for
+  the store header, admin bar, and on order PDFs (PNG/JPG only for
   the PDF). Stored on the data volume, so no rebuild is needed to change it.
 
 **Kiosk mode** for a booth tablet: open `/?kiosk=1` once on that device. Hides
@@ -54,7 +58,7 @@ timeout. `/?kiosk=0` turns it off.
    Add `SQUARE_ACCESS_TOKEN` for Square (try `SQUARE_ENV=sandbox` with a sandbox
    token first).
 4. Deploy, open `http://<host>:8090/admin`, log in, and click **Sync from N3D**.
-5. Set your business email in Settings so you get a copy of each quote.
+5. Set your business email in Settings so you get a copy of each order.
 
 Behind HTTPS (Nginx Proxy Manager, Traefik, Cloudflare Tunnel), set
 `COOKIE_SECURE=true`.
@@ -77,25 +81,24 @@ Behind HTTPS (Nginx Proxy Manager, Traefik, Cloudflare Tunnel), set
   older versions. If saving ever fails anyway (for example a read-only or NFS
   mount), the admin panel shows a red warning with the fix.
 
-- Data (designs, prices, quotes, settings) lives in `/app/data/db.json` on the
+- Data (designs, prices, orders, settings) lives in `/app/data/db.json` on the
   `n3d_catalog_data` volume. Back up that volume.
-- If SMTP isn't configured, quotes are still saved and the customer can still
-  open their PDF; the Quotes tab shows the email as not sent, and you can
+- If SMTP isn't configured, orders are still saved; the Orders tab shows the email as not sent, and you can
   resend once SMTP works.
 - Email settings saved in admin → Settings → Email (SMTP) replace the `SMTP_*`
   environment variables, take effect immediately, and are stored (password
   included) in `db.json`. Click **Use environment variables instead** to go back.
 - Square token scopes: `ITEMS_READ`, `ITEMS_WRITE`, and `MERCHANT_PROFILE_READ`
   (for the connection test).
-- **Payment links** (admin → Square → Payment links): each new quote gets a
-  Square checkout link, shown as a Pay now button, a QR code on the kiosk, and
-  in the email and PDF. Customers choose shipping (flat rate, set on the
+- **Payment links** (admin → Square → Payment links): checkout sends
+  customers to Square to pay (a QR code on the kiosk), and the link is also in
+  the email and PDF. Customers choose shipping (flat rate, set on the
   Pricing tab) or free local pickup; Square collects the shipping address at
-  checkout. Prices are treated as tax-included. The Quotes tab checks Square
+  checkout. Prices are treated as tax-included. The Orders tab checks Square
   for payments each time it loads and shows the shipping address once paid.
   Extra token scopes: `ORDERS_READ`, `ORDERS_WRITE`, `PAYMENTS_WRITE` (a personal
   access token already has them). `SQUARE_LOCATION_ID` picks the location if
   you don't choose one in admin.
 - Admin logins are in memory, so a container restart logs you out. Nothing else is lost.
-- Quote submissions are rate limited per IP (8 per 10 minutes) and have a
+- Orders are rate limited per IP (40 per 10 minutes, since venue wifi shares one IP) and have a
   honeypot field for bots.

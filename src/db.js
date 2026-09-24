@@ -9,10 +9,10 @@ const DB_PATH = path.join(DATA_DIR, "db.json");
 
 const DEFAULT_SETTINGS = {
   businessName: "",
-  businessEmail: "",     // where "our" copy of each quote goes
+  businessEmail: "",     // where "our" copy of each order goes
   businessPhone: "",
-  tagline: "Browse designs, build a quote, and we'll email you a PDF estimate.",
-  quoteFooter: "This is an estimate, not an invoice. Final pricing is confirmed before printing. " +
+  tagline: "Every design is 3D printed to order. Have it shipped or pick it up locally.",
+  quoteFooter: "Prices include tax. " +
                "Designs are fan-made and not affiliated with or endorsed by Nintendo, Game Freak, or The Pokémon Company.",
   currency: "USD",
   pricing: {
@@ -25,7 +25,7 @@ const DEFAULT_SETTINGS = {
     shipping: 5.00        // flat $ per order when the customer picks shipping
   },
   squareOverwritePrices: true, // re-push replaces the price in Square
-  squarePaymentLinks: false,   // attach a Square checkout link to each new quote
+  squarePaymentLinks: false,   // take payment through Square checkout when an order is placed
   squareLocationId: "",        // blank = SQUARE_LOCATION_ID env, else the first active location
   spoolmanLowStockGrams: 250,  // flag a color as low when matched stock falls below this
   spoolmanMatchThreshold: 60,  // max RGB distance (0-441) to call a design color "in stock"
@@ -34,6 +34,12 @@ const DEFAULT_SETTINGS = {
   logoShowName: true,    // show business name next to the logo
   smtp: {},              // { host, port, secure, user, pass, from } — overrides SMTP_* env vars when host is set
   lastCursor: null
+};
+
+const OLD_DEFAULTS = {
+  tagline: "Browse designs, build a quote, and we'll email you a PDF estimate.",
+  quoteFooter: "This is an estimate, not an invoice. Final pricing is confirmed before printing. " +
+               "Designs are fan-made and not affiliated with or endorsed by Nintendo, Game Freak, or The Pokémon Company."
 };
 
 function ensureDir() { fs.mkdirSync(DATA_DIR, { recursive: true }); }
@@ -45,6 +51,8 @@ function load() {
     const p = JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
     const settings = Object.assign(structuredClone(DEFAULT_SETTINGS), p.settings || {});
     settings.pricing = Object.assign({}, DEFAULT_SETTINGS.pricing, (p.settings || {}).pricing || {});
+    // swap the old quote-era wording for the new defaults, unless it was customized
+    for (const [k, old] of Object.entries(OLD_DEFAULTS)) if (settings[k] === old) settings[k] = DEFAULT_SETTINGS[k];
     return { designs: p.designs || {}, quotes: p.quotes || [], settings };
   } catch (err) {
     console.error("[db] db.json unreadable, backing it up and starting fresh:", err.message);

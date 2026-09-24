@@ -67,7 +67,8 @@ router.get("/designs", (req, res) => {
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const clip = (v, n) => String(v || "").trim().slice(0, n);
 
-router.post("/quotes", rateLimit({ windowMs: 10 * 60 * 1000, max: 8 }), async (req, res) => {
+// generous limit: everyone on the venue wifi (and the kiosk) shares one IP
+router.post("/quotes", rateLimit({ windowMs: 10 * 60 * 1000, max: 40 }), async (req, res) => {
   const body = req.body || {};
   if (body.website) return res.json({ ok: true }); // honeypot: bots fill hidden fields
 
@@ -95,12 +96,12 @@ router.post("/quotes", rateLimit({ windowMs: 10 * 60 * 1000, max: 8 }), async (r
       estimate: d.price_cents == null
     });
   }
-  if (!items.length) return res.status(400).json({ error: "Add at least one design to your quote." });
+  if (!items.length) return res.status(400).json({ error: "Your cart is empty." });
 
   const subtotal = items.reduce((sum, i) => sum + i.unit_cents * i.qty, 0);
   const shipping = fulfillment === "ship" ? Math.round((Number(s.pricing.shipping) || 0) * 100) : 0;
   const now = new Date();
-  const id = "Q-" + now.toISOString().slice(0, 10).replace(/-/g, "") + "-" + crypto.randomBytes(2).toString("hex").toUpperCase();
+  const id = "O-" + now.toISOString().slice(0, 10).replace(/-/g, "") + "-" + crypto.randomBytes(2).toString("hex").toUpperCase();
   const quote = db.addQuote({
     id,
     token: crypto.randomBytes(16).toString("hex"),
@@ -120,8 +121,8 @@ router.post("/quotes", rateLimit({ windowMs: 10 * 60 * 1000, max: 8 }), async (r
   let pdf;
   try { pdf = await buildQuotePdf(quote, s); }
   catch (e) {
-    console.error("[quote] pdf failed:", e);
-    return res.status(500).json({ error: "Couldn't generate the PDF. Your request was saved; we'll follow up by email." });
+    console.error("[order] pdf failed:", e);
+    return res.status(500).json({ error: "Your order was saved, but something went wrong on our end. We'll follow up by email." });
   }
 
   const email = await mailer.sendQuoteEmails(quote, pdf, s);
@@ -147,7 +148,7 @@ router.get("/quotes/:id/pdf", async (req, res) => {
   }
   const pdf = await buildQuotePdf(q, db.getSettings());
   res.setHeader("Content-Type", "application/pdf");
-  res.setHeader("Content-Disposition", `inline; filename="estimate-${q.id}.pdf"`);
+  res.setHeader("Content-Disposition", `inline; filename="order-${q.id}.pdf"`);
   res.send(pdf);
 });
 

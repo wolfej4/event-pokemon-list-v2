@@ -95,7 +95,6 @@ main{ max-width:1200px; margin:0 auto; padding:8px clamp(16px, 4vw, 40px) 60px; 
 .filaments .g{ margin-left:auto; color:var(--faint); font-size:.82rem; }
 .dialog .actions{ display:flex; gap:10px; flex-wrap:wrap; margin-top:auto; padding-top:6px; }
 .dialog .close{ position:absolute; }
-.estimate-note{ color:var(--faint); font-size:.8rem; margin:0; }
 @media (max-width:720px){
   .overlay{ align-items:flex-end; padding:0; }
   .dialog{ grid-template-columns:1fr; border-radius:18px 18px 0 0; max-height:92vh; }
@@ -121,12 +120,14 @@ main{ max-width:1200px; margin:0 auto; padding:8px clamp(16px, 4vw, 40px) 60px; 
 .remove{ border:none; background:none; color:var(--faint); font-size:.78rem; cursor:pointer; padding:4px 0 0; text-decoration:underline; }
 .total{ display:flex; justify-content:space-between; align-items:baseline; padding:16px 0 4px; font-size:1.15rem; font-weight:700; }
 .total .v{ font-family:var(--display); font-size:1.6rem; }
-.fulfill{ border:1px solid var(--line); border-radius:12px; padding:10px 14px 6px; margin:16px 0 0; }
+.fulfill{ border:1px solid var(--line); border-radius:12px; padding:10px 14px 6px; margin:16px 0 14px; }
+.fulfill.invalid{ border-color:var(--bad); box-shadow:0 0 0 1px var(--bad); }
 .fulfill legend{ font-weight:700; font-size:.9rem; padding:0 4px; }
 .fulfill label{ display:flex; gap:10px; align-items:center; padding:8px 0; cursor:pointer; font-weight:600; }
 .fulfill input{ width:20px; height:20px; accent-color:var(--accent); margin:0; }
 .fulfill .muted{ color:var(--faint); font-weight:400; }
 .subline{ display:flex; justify-content:space-between; color:var(--muted); padding:12px 0 0; font-size:.95rem; }
+.subline[hidden]{ display:none; }
 .fine{ color:var(--faint); font-size:.8rem; margin:0 0 18px; }
 .form-error{ color:var(--bad); font-weight:700; font-size:.9rem; min-height:1.3em; margin:4px 0 10px; }
 .hp{ position:absolute; left:-9999px; }
