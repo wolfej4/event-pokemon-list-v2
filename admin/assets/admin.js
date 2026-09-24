@@ -70,7 +70,8 @@
   function squareCell(d){
     if (d.square_error) return '<span class="pill bad" title="' + esc(d.square_error) + '">Error</span>';
     if (d.square_item_id) return '<span class="pill ok" title="Last pushed ' + esc(new Date(d.square_pushed_at).toLocaleString()) + '">In Square</span>' +
-      (d.square_image_error ? ' <span class="pill warn" title="' + esc(d.square_image_error) + '">No photo</span><div class="dm pay-err">Photo: ' + esc(d.square_image_error) + '</div>' : '');
+      (d.square_image_error ? ' <span class="pill warn" title="' + esc(d.square_image_error) + '">No photo</span><div class="dm pay-err">Photo: ' + esc(d.square_image_error) + '</div>'
+        : d.square_image_ok ? ' <span class="pill ok">Photo</span>' : ' <span class="pill" title="Push again to upload the photo">Photo pending</span>');
     return '<span class="pill">Not pushed</span>';
   }
 
