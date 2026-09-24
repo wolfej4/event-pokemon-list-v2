@@ -14,7 +14,9 @@
     return fetch("/api/admin" + path, opts).then(function(r){
       if (r.status === 401 && path !== "/login") { showLogin(); throw new Error("Session expired. Log in again."); }
       return r.json().catch(function(){ return {}; }).then(function(j){
-        if (!r.ok) throw new Error(j.error || ("Request failed (" + r.status + ")"));
+        if (!r.ok) throw new Error(j.error || (r.status >= 502 && r.status <= 504
+          ? "The server didn\u2019t answer (" + r.status + " from the proxy in front of it). The app may have restarted or timed out; check the container log for the reason."
+          : "Request failed (" + r.status + ")"));
         return j;
       });
     });

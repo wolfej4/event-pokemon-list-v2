@@ -243,7 +243,7 @@ router.post("/sync", async (req, res) => {
 
 router.get("/n3d/check", async (req, res) => {
   try { res.json({ ok: true, info: await n3d.checkKey() }); }
-  catch (e) { res.status(502).json({ ok: false, error: e.message }); }
+  catch (e) { res.status(422).json({ ok: false, error: e.message }); }
 });
 
 // ---------- quotes ----------
@@ -257,6 +257,10 @@ router.get("/quotes", async (req, res) => {
   const cur = db.getSettings().currency;
   res.json({ paymentError, paymentProblem: payments.problem(), data: db.allQuotes().map(q => Object.assign({}, q, { total: fmt(q.total_cents, cur), token: undefined })) });
 });
+
+// Failures from Square/N3D/Spoolman are answered with 422, not 502: proxies
+// such as Cloudflare or Nginx Proxy Manager can swap a 502 for their own
+// "Bad Gateway" page, which hides the actual error from the admin panel.
 
 // Cheap poll for the admin badge and notifications: orders still marked "new".
 router.get("/orders/new", (req, res) => {
@@ -277,7 +281,7 @@ router.post("/quotes/:id/payment-link", async (req, res) => {
   if (!square.configured()) return res.status(400).json({ error: "SQUARE_ACCESS_TOKEN isn't set." });
   if (q.payment && q.payment.url) return res.json({ ok: true, payment: q.payment });
   const saved = await payments.attachLink(q, req);
-  if (saved.payment.error) return res.status(502).json({ error: saved.payment.error });
+  if (saved.payment.error) return res.status(422).json({ error: saved.payment.error });
   res.json({ ok: true, payment: saved.payment });
 });
 
@@ -328,13 +332,13 @@ router.get("/quotes.csv", (req, res) => {
 
 router.post("/smtp/test", async (req, res) => {
   try { await mailer.verify(); res.json({ ok: true }); }
-  catch (e) { res.status(502).json({ ok: false, error: e.message }); }
+  catch (e) { res.status(422).json({ ok: false, error: e.message }); }
 });
 
 // ---------- Spoolman ----------
 router.get("/spoolman/test", async (req, res) => {
   try { res.json({ ok: true, info: await spoolman.testConnection() }); }
-  catch (e) { res.status(502).json({ ok: false, error: e.message }); }
+  catch (e) { res.status(422).json({ ok: false, error: e.message }); }
 });
 
 let lastInventoryReport = null;
@@ -347,7 +351,7 @@ router.post("/spoolman/check", async (req, res) => {
     });
     res.json({ ok: true, report: lastInventoryReport });
   } catch (e) {
-    res.status(502).json({ error: e.message });
+    res.status(422).json({ error: e.message });
   }
 });
 router.get("/spoolman/report", (req, res) => res.json({ report: lastInventoryReport }));
@@ -355,7 +359,7 @@ router.get("/spoolman/report", (req, res) => res.json({ report: lastInventoryRep
 // ---------- Square ----------
 router.get("/square/test", async (req, res) => {
   try { res.json({ ok: true, locations: await square.testConnection() }); }
-  catch (e) { res.status(502).json({ ok: false, error: e.message }); }
+  catch (e) { res.status(422).json({ ok: false, error: e.message }); }
 });
 
 async function pushOne(slug) {
@@ -372,6 +376,7 @@ async function pushOne(slug) {
     const byEnv = Object.assign({ production: squareIdsFor(d, "production"), sandbox: squareIdsFor(d, "sandbox") }, { [env]: saved });
     return db.upsertDesign(slug, Object.assign({}, saved, { square_by_env: byEnv, square_error: null }));
   } catch (e) {
+    console.error("[square] push failed for " + slug + ":", e.message);
     db.upsertDesign(slug, { square_error: e.message });
     throw e;
   }
@@ -379,13 +384,13 @@ async function pushOne(slug) {
 
 router.post("/square/push/:slug", async (req, res) => {
   try { res.json({ ok: true, data: toAdmin(await pushOne(req.params.slug), db.getSettings()) }); }
-  catch (e) { res.status(502).json({ error: e.message }); }
+  catch (e) { res.status(422).json({ error: e.message }); }
 });
 
 router.post("/square/test-payment-link", async (req, res) => {
   if (!square.configured()) return res.status(400).json({ error: "SQUARE_ACCESS_TOKEN isn't set." });
   try { const l = await payments.testLink(req); res.json({ ok: true, location_id: l.location_id }); }
-  catch (e) { res.status(502).json({ error: e.message }); }
+  catch (e) { res.status(422).json({ error: e.message }); }
 });
 
 // Bulk push runs in the background so a long run doesn't time out behind a proxy.
