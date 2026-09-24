@@ -243,7 +243,7 @@ router.post("/sync", async (req, res) => {
 
 router.get("/n3d/check", async (req, res) => {
   try { res.json({ ok: true, info: await n3d.checkKey() }); }
-  catch (e) { res.status(502).json({ ok: false, error: e.message }); }
+  catch (e) { res.status(422).json({ ok: false, error: e.message }); }
 });
 
 // ---------- quotes ----------
@@ -257,6 +257,10 @@ router.get("/quotes", async (req, res) => {
   const cur = db.getSettings().currency;
   res.json({ paymentError, paymentProblem: payments.problem(), data: db.allQuotes().map(q => Object.assign({}, q, { total: fmt(q.total_cents, cur), token: undefined })) });
 });
+
+// Failures from Square/N3D/Spoolman are answered with 422, not 502: proxies
+// such as Cloudflare or Nginx Proxy Manager can swap a 502 for their own
+// "Bad Gateway" page, which hides the actual error from the admin panel.
 
 // Cheap poll for the admin badge and notifications: orders still marked "new".
 router.get("/orders/new", (req, res) => {
@@ -277,7 +281,7 @@ router.post("/quotes/:id/payment-link", async (req, res) => {
   if (!square.configured()) return res.status(400).json({ error: "SQUARE_ACCESS_TOKEN isn't set." });
   if (q.payment && q.payment.url) return res.json({ ok: true, payment: q.payment });
   const saved = await payments.attachLink(q, req);
-  if (saved.payment.error) return res.status(502).json({ error: saved.payment.error });
+  if (saved.payment.error) return res.status(422).json({ error: saved.payment.error });
   res.json({ ok: true, payment: saved.payment });
 });
 
@@ -328,13 +332,13 @@ router.get("/quotes.csv", (req, res) => {
 
 router.post("/smtp/test", async (req, res) => {
   try { await mailer.verify(); res.json({ ok: true }); }
-  catch (e) { res.status(502).json({ ok: false, error: e.message }); }
+  catch (e) { res.status(422).json({ ok: false, error: e.message }); }
 });
 
 // ---------- Spoolman ----------
 router.get("/spoolman/test", async (req, res) => {
   try { res.json({ ok: true, info: await spoolman.testConnection() }); }
-  catch (e) { res.status(502).json({ ok: false, error: e.message }); }
+  catch (e) { res.status(422).json({ ok: false, error: e.message }); }
 });
 
 let lastInventoryReport = null;
@@ -347,7 +351,7 @@ router.post("/spoolman/check", async (req, res) => {
     });
     res.json({ ok: true, report: lastInventoryReport });
   } catch (e) {
-    res.status(502).json({ error: e.message });
+    res.status(422).json({ error: e.message });
   }
 });
 router.get("/spoolman/report", (req, res) => res.json({ report: lastInventoryReport }));
@@ -355,37 +359,88 @@ router.get("/spoolman/report", (req, res) => res.json({ report: lastInventoryRep
 // ---------- Square ----------
 router.get("/square/test", async (req, res) => {
   try { res.json({ ok: true, locations: await square.testConnection() }); }
-  catch (e) { res.status(502).json({ ok: false, error: e.message }); }
+  catch (e) { res.status(422).json({ ok: false, error: e.message }); }
 });
 
+// Saves the item IDs as soon as Square creates the item, then tries the photo.
+// (Saving only after the photo meant a failed photo upload lost the new ID,
+// so every push created another copy of the item.)
 async function pushOne(slug) {
   const d = db.getDesign(slug);
   if (!d) throw new Error("not found");
   const s = db.getSettings();
   const env = square.envName();
   const ids = squareIdsFor(d, env);
+  const saveIds = (fields, extra) => {
+    const cur = squareIdsFor(db.getDesign(slug), env);
+    const next = Object.assign({}, cur, fields);
+    const byEnv = { production: squareIdsFor(d, "production"), sandbox: squareIdsFor(d, "sandbox") };
+    byEnv[env] = next;
+    return db.upsertDesign(slug, Object.assign({}, next, { square_by_env: byEnv }, extra));
+  };
+
+  let item;
   try {
-    const out = await square.pushDesign(
-      Object.assign({}, d, { square_item_id: ids.square_item_id || null, square_image_src: ids.square_image_src || null }),
+    item = await square.upsertItem(Object.assign({}, d, { square_item_id: ids.square_item_id || null }),
       unitCents(d, s.pricing), { currency: s.currency, overwritePrice: s.squareOverwritePrices });
-    const saved = {}; SQ_FIELDS.forEach(k => { saved[k] = out[k] !== undefined ? out[k] : ids[k] || null; });
-    const byEnv = Object.assign({ production: squareIdsFor(d, "production"), sandbox: squareIdsFor(d, "sandbox") }, { [env]: saved });
-    return db.upsertDesign(slug, Object.assign({}, saved, { square_by_env: byEnv, square_error: null }));
   } catch (e) {
+    console.error("[square] push failed for " + slug + ":", e.message);
     db.upsertDesign(slug, { square_error: e.message });
     throw e;
   }
+  const created = item.created; delete item.created;
+  let saved = saveIds(created ? Object.assign(item, { square_image_src: null }) : item, { square_error: null });
+
+  // only upload the photo when it's new, N3D changed it, or the last try failed
+  if (d.image_url && (created || ids.square_image_src !== d.image_url)) {
+    try {
+      await square.uploadImage(item.square_item_id, d.image_url, String(d.title || slug));
+      saved = saveIds({ square_image_src: d.image_url }, { square_image_error: null });
+    } catch (e) {
+      console.error("[square] photo upload failed for " + slug + ":", e.message);
+      saved = db.upsertDesign(slug, { square_image_error: e.message });
+    }
+  } else if (saved.square_image_error) {
+    saved = db.upsertDesign(slug, { square_image_error: null });
+  }
+  return saved;
 }
+
+// Items this app created in Square that aren't the one each design points to:
+// the copies left behind when pushes kept recreating items.
+function duplicateItems(items) {
+  const env = square.envName();
+  const byTitle = {};
+  for (const d of db.allDesigns()) {
+    const id = squareIdsFor(d, env).square_item_id;
+    if (id) byTitle[String(d.title || d.slug).slice(0, 255)] = id;
+  }
+  return items.filter(it => byTitle[it.name] && it.id !== byTitle[it.name]);
+}
+router.get("/square/duplicates", async (req, res) => {
+  try {
+    const dups = duplicateItems(await square.listAppItems());
+    res.json({ ok: true, count: dups.length, items: dups.slice(0, 500) });
+  } catch (e) { res.status(422).json({ error: e.message }); }
+});
+router.post("/square/duplicates/delete", async (req, res) => {
+  try {
+    // recompute on the server so only real duplicates can be deleted
+    const dups = duplicateItems(await square.listAppItems());
+    await square.deleteItems(dups.map(x => x.id));
+    res.json({ ok: true, deleted: dups.length });
+  } catch (e) { res.status(422).json({ error: e.message }); }
+});
 
 router.post("/square/push/:slug", async (req, res) => {
   try { res.json({ ok: true, data: toAdmin(await pushOne(req.params.slug), db.getSettings()) }); }
-  catch (e) { res.status(502).json({ error: e.message }); }
+  catch (e) { res.status(422).json({ error: e.message }); }
 });
 
 router.post("/square/test-payment-link", async (req, res) => {
   if (!square.configured()) return res.status(400).json({ error: "SQUARE_ACCESS_TOKEN isn't set." });
   try { const l = await payments.testLink(req); res.json({ ok: true, location_id: l.location_id }); }
-  catch (e) { res.status(502).json({ error: e.message }); }
+  catch (e) { res.status(422).json({ error: e.message }); }
 });
 
 // Bulk push runs in the background so a long run doesn't time out behind a proxy.

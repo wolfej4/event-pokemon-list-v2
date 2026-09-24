@@ -140,35 +140,48 @@ function setPrice(varData, cents, currency) {
   }
 }
 
+// Square only takes JPEG, PNG or GIF (max 15 MB), so check the real format
+// from the file's first bytes rather than trusting the content-type header.
+function sniffImage(buf) {
+  if (buf.length > 3 && buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return { type: "image/jpeg", ext: "jpg" };
+  if (buf.length > 8 && buf.slice(0, 8).equals(Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]))) return { type: "image/png", ext: "png" };
+  if (buf.length > 6 && /^GIF8[79]a$/.test(buf.slice(0, 6).toString("latin1"))) return { type: "image/gif", ext: "gif" };
+  if (buf.length > 12 && buf.slice(0, 4).toString("latin1") === "RIFF" && buf.slice(8, 12).toString("latin1") === "WEBP") return { unsupported: "WebP" };
+  if (buf.length > 12 && /^ftyp(avif|avis)/.test(buf.slice(4, 12).toString("latin1"))) return { unsupported: "AVIF" };
+  return { unsupported: "an unrecognized format" };
+}
+
 async function uploadImage(itemId, imageUrl, name) {
-  const img = await fetch(imageUrl);
-  if (!img.ok) throw new Error("couldn't download design image (" + img.status + ")");
-  const type = img.headers.get("content-type") || "image/jpeg";
-  const ext = type.includes("png") ? "png" : type.includes("webp") ? "webp" : type.includes("gif") ? "gif" : "jpg";
+  // ask image CDNs that negotiate formats for something Square accepts
+  const img = await fetch(imageUrl, { headers: { Accept: "image/jpeg,image/png,image/gif;q=0.9,*/*;q=0.1" } });
+  if (!img.ok) throw new Error("couldn't download the design image (" + img.status + ")");
   const buf = Buffer.from(await img.arrayBuffer());
+  const kind = sniffImage(buf);
+  if (kind.unsupported) throw new Error("the design image is " + kind.unsupported + ", and Square only accepts JPEG, PNG or GIF");
+  if (buf.length > 15 * 1024 * 1024) throw new Error("the design image is over Square's 15 MB limit");
 
   const form = new FormData();
-  // metadata must be a plain string field; only the photo is a file part
+  // Square's multipart parts are "request" (JSON string) and "image_file"
   form.append("request", JSON.stringify({
     idempotency_key: crypto.randomUUID(),
     object_id: itemId,
     is_primary: true,
     image: { type: "IMAGE", id: "#img", image_data: { name: name.slice(0, 250) } }
   }));
-  form.append("file", new Blob([buf], { type }), "design." + ext);
+  form.append("image_file", new Blob([buf], { type: kind.type }), "design." + kind.ext);
 
   const res = await fetch(base() + "/v2/catalog/images", { method: "POST", headers: authHeaders(), body: form });
   if (res.status === 401) throw authError();
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error("image upload: " + ((json.errors && json.errors.map(x => x.detail).join("; ")) || res.status));
+  if (!res.ok) throw new Error("Square rejected the image: " + ((json.errors && json.errors.map(x => x.detail || x.code).join("; ")) || res.status));
   return json.image && json.image.id;
 }
 
 /**
- * Create or update one design in Square.
- * Returns fields to store on the design: { square_item_id, square_variation_id, square_image_src, square_pushed_at }.
+ * Create or update one design's item in Square (without the photo; see uploadImage).
+ * Returns { square_item_id, square_variation_id, square_pushed_at, created }.
  */
-async function pushDesign(d, priceCents, { currency = "USD", overwritePrice = true } = {}) {
+async function upsertItem(d, priceCents, { currency = "USD", overwritePrice = true } = {}) {
   const name = String(d.title || d.slug).slice(0, 255);
   let existing = null;
 
@@ -213,22 +226,32 @@ async function pushDesign(d, priceCents, { currency = "USD", overwritePrice = tr
 
   const res = await call("POST", "/v2/catalog/object", { idempotency_key: crypto.randomUUID(), object });
   const saved = res.catalog_object;
-  const out = {
+  return {
     square_item_id: saved.id,
     square_variation_id: (saved.item_data.variations || [])[0] && saved.item_data.variations[0].id,
     square_pushed_at: new Date().toISOString(),
-    square_error: null
+    created: !existing
   };
+}
 
-  // only re-upload the photo when it's new or N3D changed it
-  const needsImage = d.image_url && (!existing || d.square_image_src !== d.image_url);
-  if (needsImage) {
-    await uploadImage(saved.id, d.image_url, name);
-    out.square_image_src = d.image_url;
-  }
+// Items this app created (its descriptions end with "3D printed to order."), for duplicate cleanup.
+async function listAppItems() {
+  const out = [];
+  let cursor = null;
+  do {
+    const j = await call("GET", "/v2/catalog/list?types=ITEM" + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""));
+    for (const o of j.objects || []) {
+      const desc = (o.item_data && (o.item_data.description || o.item_data.description_plaintext)) || "";
+      if (!o.is_deleted && /3D printed to order\.\s*$/.test(desc)) out.push({ id: o.id, name: o.item_data.name, updated_at: o.updated_at });
+    }
+    cursor = j.cursor;
+  } while (cursor);
   return out;
+}
+async function deleteItems(ids) {
+  for (let i = 0; i < ids.length; i += 200) await call("POST", "/v2/catalog/batch-delete", { object_ids: ids.slice(i, i + 200) });
 }
 
 async function deletePaymentLink(id) { await call("DELETE", "/v2/online-checkout/payment-links/" + encodeURIComponent(id)); }
 
-module.exports = { envName, createPaymentLink, deletePaymentLink, paymentStatuses, isSandbox, configured, testConnection, pushDesign, describe };
+module.exports = { envName, createPaymentLink, deletePaymentLink, paymentStatuses, isSandbox, configured, testConnection, upsertItem, uploadImage, listAppItems, deleteItems, describe };

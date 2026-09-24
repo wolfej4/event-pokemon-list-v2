@@ -14,7 +14,9 @@
     return fetch("/api/admin" + path, opts).then(function(r){
       if (r.status === 401 && path !== "/login") { showLogin(); throw new Error("Session expired. Log in again."); }
       return r.json().catch(function(){ return {}; }).then(function(j){
-        if (!r.ok) throw new Error(j.error || ("Request failed (" + r.status + ")"));
+        if (!r.ok) throw new Error(j.error || (r.status >= 502 && r.status <= 504
+          ? "The server didn\u2019t answer (" + r.status + " from the proxy in front of it). The app may have restarted or timed out; check the container log for the reason."
+          : "Request failed (" + r.status + ")"));
         return j;
       });
     });
@@ -67,7 +69,8 @@
 
   function squareCell(d){
     if (d.square_error) return '<span class="pill bad" title="' + esc(d.square_error) + '">Error</span>';
-    if (d.square_item_id) return '<span class="pill ok" title="Last pushed ' + esc(new Date(d.square_pushed_at).toLocaleString()) + '">In Square</span>';
+    if (d.square_item_id) return '<span class="pill ok" title="Last pushed ' + esc(new Date(d.square_pushed_at).toLocaleString()) + '">In Square</span>' +
+      (d.square_image_error ? ' <span class="pill warn" title="' + esc(d.square_image_error) + '">No photo</span><div class="dm pay-err">Photo: ' + esc(d.square_image_error) + '</div>' : '');
     return '<span class="pill">Not pushed</span>';
   }
 
@@ -575,6 +578,32 @@
     api("/square/push-all", { method:"POST", body:{ includeHidden: $("sq-hidden").checked } })
       .then(checkSquareJob).catch(function(e){ setStatus($("sq-status"), e.message, "bad"); });
   });
+  // ---------- duplicate cleanup ----------
+  var dupCount = 0;
+  $("sq-dups-find").addEventListener("click", function(){
+    var b = this; b.disabled = true; $("sq-dups-delete").hidden = true;
+    setStatus($("sq-dups-status"), "Looking through your Square catalog\u2026");
+    api("/square/duplicates").then(function(r){
+      dupCount = r.count;
+      if (!r.count) return setStatus($("sq-dups-status"), "No duplicates found.", "ok");
+      var names = {}; r.items.forEach(function(x){ names[x.name] = (names[x.name] || 0) + 1; });
+      setStatus($("sq-dups-status"), r.count + " extra " + (r.count === 1 ? "copy" : "copies") + " of " + Object.keys(names).length + " designs: " +
+        Object.keys(names).slice(0, 8).map(function(n){ return n + " (" + names[n] + ")"; }).join(", ") + (Object.keys(names).length > 8 ? ", \u2026" : ""));
+      $("sq-dups-delete").hidden = false;
+      $("sq-dups-delete").textContent = "Delete " + r.count + " duplicate" + (r.count === 1 ? "" : "s");
+    }).catch(function(e){ setStatus($("sq-dups-status"), e.message, "bad"); })
+      .finally(function(){ b.disabled = false; });
+  });
+  $("sq-dups-delete").addEventListener("click", function(){
+    if (!confirm("Delete " + dupCount + " duplicate items from your Square catalog? The copy each design is linked to is kept. This can't be undone.")) return;
+    var b = this; b.disabled = true;
+    setStatus($("sq-dups-status"), "Deleting\u2026");
+    api("/square/duplicates/delete", { method:"POST" })
+      .then(function(r){ setStatus($("sq-dups-status"), "Deleted " + r.deleted + " duplicate" + (r.deleted === 1 ? "" : "s") + ".", "ok"); b.hidden = true; })
+      .catch(function(e){ setStatus($("sq-dups-status"), e.message, "bad"); })
+      .finally(function(){ b.disabled = false; });
+  });
+
   var pollTimer;
   function checkSquareJob(){
     clearTimeout(pollTimer);
