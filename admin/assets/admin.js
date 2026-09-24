@@ -1,6 +1,9 @@
 (function(){
   "use strict";
   var $ = function(id){ return document.getElementById(id); };
+  // every form here is saved with fetch; never let one fall back to a full
+  // page reload, which would drop unsaved changes and jump back to Designs
+  document.addEventListener("submit", function(e){ e.preventDefault(); }, true);
   var designs = [], settings = {}, status = {};
   function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
   function money(c){ return (c/100).toLocaleString("en-US", { style:"currency", currency: settings.currency || "USD" }); }
@@ -33,6 +36,8 @@
   // ---------- tabs ----------
   document.querySelector(".tabs").addEventListener("click", function(e){
     var b = e.target.closest("[data-tab]"); if (!b) return;
+    // remember the tab in the URL so a reload comes back to it
+    try { history.replaceState(null, "", "#" + (b.dataset.tab === "quotes" ? "orders" : b.dataset.tab)); } catch(err){}
     [].forEach.call(this.children, function(x){ x.classList.toggle("active", x === b); });
     [].forEach.call(document.querySelectorAll("[data-panel]"), function(p){ p.hidden = p.dataset.panel !== b.dataset.tab; });
     if (b.dataset.tab === "quotes") loadQuotes();
@@ -45,7 +50,9 @@
       settings = r[0]; status = r[1];
       fillSettings(); fillSmtp(); fillPricing(); renderConn(); renderLogos(); renderStorageAlert(); renderPayProblem();
       startOrderWatch();
-      if (location.hash === "#orders") openOrdersTab();
+      var tab = location.hash.slice(1) === "orders" ? "quotes" : location.hash.slice(1);
+      var tabBtn = tab && document.querySelector('.tabs [data-tab="' + tab.replace(/[^a-z]/g, "") + '"]');
+      if (tabBtn) tabBtn.click();
       if (settings.businessName) $("bar-title").textContent = settings.businessName + " admin";
       return loadDesigns();
     }).catch(function(e){ setStatus($("sync-status"), e.message, "bad"); });
@@ -515,11 +522,20 @@
       }).join("");
     }).catch(function(e){ sqLocLoaded = false; setStatus($("sq-pay-status"), e.message, "bad"); });
   }
-  $("sq-pay-form").addEventListener("submit", function(e){
-    e.preventDefault();
-    api("/settings", { method:"POST", body:{ squarePaymentLinks: $("sq-pay-on").checked, squareLocationId: $("sq-location").value } })
+  // both save as soon as they change, like the other switches in admin
+  function saveSquarePay(body, revert){
+    setStatus($("sq-pay-status"), "Saving\u2026");
+    api("/settings", { method:"POST", body: body })
       .then(function(s){ settings = s; setStatus($("sq-pay-status"), "Saved.", "ok"); return refreshPayProblem(); })
-      .catch(function(err){ setStatus($("sq-pay-status"), err.message, "bad"); });
+      .catch(function(err){ revert(); setStatus($("sq-pay-status"), "Not saved: " + err.message, "bad"); });
+  }
+  $("sq-pay-on").addEventListener("change", function(){
+    var box = this;
+    saveSquarePay({ squarePaymentLinks: box.checked }, function(){ box.checked = !box.checked; });
+  });
+  $("sq-location").addEventListener("change", function(){
+    var sel = this;
+    saveSquarePay({ squareLocationId: sel.value }, function(){ sel.value = settings.squareLocationId || ""; });
   });
   $("sq-test").addEventListener("click", function(){
     setStatus($("sq-locations"), "Connecting to Square…");

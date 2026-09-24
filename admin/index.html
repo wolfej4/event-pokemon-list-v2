@@ -132,17 +132,16 @@
           <button class="btn" id="sq-test" type="button">Test connection</button>
           <div id="sq-locations" class="status"></div>
         </div>
-        <form class="panel" id="sq-pay-form">
+        <div class="panel" id="sq-pay-form">
           <h3>Payment links</h3>
           <p class="sub">Customers pay through Square when they check out: on their own phone they go straight to Square's checkout, and the kiosk shows a QR code to scan. The link is also in the confirmation email and PDF. Shipping is added at checkout when they choose it. Prices already include tax.</p>
           <label class="check"><input type="checkbox" id="sq-pay-on"> Take payment at checkout</label>
           <div class="field" style="margin-top:10px"><label for="sq-location">Square location payments go to</label>
             <select id="sq-location"><option value="">First active location</option></select></div>
           <div class="alert" id="sq-pay-problem" role="alert" hidden></div>
-          <div class="row"><button class="btn primary" type="submit">Save</button>
-          <button class="btn" id="sq-pay-test" type="button">Test payment link</button></div>
+          <div class="row"><button class="btn" id="sq-pay-test" type="button">Test payment link</button></div>
           <p class="status" id="sq-pay-status" role="status"></p>
-        </form>
+        </div>
         <div class="panel">
           <h3>Push catalog</h3>
           <label class="check"><input type="checkbox" id="sq-overwrite"> Update prices in Square when re-pushing</label>
