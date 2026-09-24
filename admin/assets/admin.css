@@ -12,6 +12,8 @@
 .tabs{ display:flex; gap:2px; overflow-x:auto; }
 .tabs button{ border:none; background:none; padding:8px 12px; border-radius:8px; cursor:pointer; color:var(--muted); font-weight:700; }
 .tabs button.active{ background:var(--accent-soft); color:var(--accent); }
+.badge{ display:inline-block; min-width:1.35em; padding:1px 6px; margin-left:4px; border-radius:999px; background:#D92D20; color:#fff; font-size:.72rem; line-height:1.35; text-align:center; vertical-align:1px; }
+.badge[hidden]{ display:none; }
 .bar-right{ margin-left:auto; display:flex; gap:6px; align-items:center; }
 
 main{ max-width:1320px; margin:0 auto; padding:24px clamp(14px, 3vw, 32px) 60px; }
@@ -93,3 +95,4 @@ label.btn{ cursor:pointer; }
 .match-cell{ display:flex; align-items:center; gap:8px; }
 .match-cell .swatch-sm{ width:16px; height:16px; border-radius:5px; border:1px solid var(--line); flex:none; display:inline-block; }
 .designs-cell{ max-width:220px; color:var(--muted); font-size:.82rem; }
+.pay-err{ color:var(--bad); max-width:230px; margin-top:3px; }

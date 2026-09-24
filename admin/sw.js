@@ -1,11 +1,11 @@
 "use strict";
-// Just enough of a service worker to make the admin panel installable on
-// iOS/iPadOS as a standalone app. Unlike the storefront's service worker,
+// Makes the admin panel installable and shows new-order notifications
+// (Android Chrome can only show them through a service worker). Unlike the storefront's service worker,
 // this deliberately does NOT cache /api/admin/* — admin data (quotes,
 // pricing, sync status) should always come from the network, never a stale
 // cached copy of something behind a login.
 
-const CACHE_NAME = "n3d-admin-shell-v1";
+const CACHE_NAME = "n3d-admin-shell-v2";
 const APP_SHELL = [
   "/admin",
   "/admin/assets/admin.css",
@@ -37,12 +37,27 @@ self.addEventListener("fetch", (event) => {
 
   const isAppShell = APP_SHELL.includes(url.pathname) || url.pathname === "/admin/index.html";
   if (isAppShell) {
-    // cache-first so the shell launches instantly, falling back to network
-    // for anything new (e.g. after a deploy the cache hasn't caught up to)
+    // network-first so a deploy shows up right away; the cache is only an
+    // offline fallback
     event.respondWith(
-      caches.match(req).then((cached) => cached || fetch(req))
+      fetch(req).then((res) => {
+        if (res.ok) { const copy = res.clone(); caches.open(CACHE_NAME).then((c) => c.put(req, copy)); }
+        return res;
+      }).catch(() => caches.match(req))
     );
   }
   // everything else (icons, admin-specific images): let the browser's own
   // HTTP cache handle it, no need to duplicate that here
+});
+
+// clicking a new-order notification focuses the admin (or opens it) on Orders
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    self.clients.matchAll({ type: "window", includeUncontrolled: true }).then((wins) => {
+      const win = wins.find((w) => new URL(w.url).pathname.startsWith("/admin"));
+      if (win) { win.postMessage({ type: "open-orders" }); return win.focus(); }
+      return self.clients.openWindow("/admin#orders");
+    })
+  );
 });

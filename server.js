@@ -43,10 +43,19 @@ app.use("/api/public", require("./src/routes/public"));
 app.use("/api/admin", require("./src/routes/admin"));
 app.use("/api", (req, res) => res.status(404).json({ error: "not_found" }));
 
-app.use("/admin", express.static(path.join(__dirname, "admin")));
-app.use(express.static(path.join(__dirname, "public")));
-app.get(/^\/admin(\/.*)?$/, (req, res) => res.sendFile(path.join(__dirname, "admin", "index.html")));
-app.get("*", (req, res) => res.sendFile(path.join(__dirname, "public", "index.html")));
+// lets the admin service worker (served from /admin/sw.js) control /admin itself
+app.get("/admin/sw.js", (req, res) => {
+  res.setHeader("Service-Worker-Allowed", "/admin");
+  res.setHeader("Cache-Control", "no-cache");
+  res.sendFile(path.join(__dirname, "admin", "sw.js"));
+});
+// pages, scripts and styles must be revalidated on every load so a deploy
+// (or a caching proxy in front of the app) never mixes old and new files
+const revalidate = (res, file) => { if (/\.(html|js|css|json)$/.test(file)) res.setHeader("Cache-Control", "no-cache"); };
+app.use("/admin", express.static(path.join(__dirname, "admin"), { setHeaders: revalidate }));
+app.use(express.static(path.join(__dirname, "public"), { setHeaders: revalidate }));
+app.get(/^\/admin(\/.*)?$/, (req, res) => res.set("Cache-Control", "no-cache").sendFile(path.join(__dirname, "admin", "index.html")));
+app.get("*", (req, res) => res.set("Cache-Control", "no-cache").sendFile(path.join(__dirname, "public", "index.html")));
 
 app.use((err, req, res, next) => {
   console.error("[error]", err);

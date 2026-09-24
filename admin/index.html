@@ -13,6 +13,7 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&display=swap">
 <link rel="stylesheet" href="/assets/theme.css">
 <link rel="stylesheet" href="/admin/assets/admin.css">
+<link rel="manifest" href="/admin/manifest.json">
 </head>
 <body>
 
@@ -31,7 +32,7 @@
     <nav class="tabs" role="tablist">
       <button role="tab" data-tab="designs" class="active" type="button">Designs</button>
       <button role="tab" data-tab="pricing" type="button">Pricing</button>
-      <button role="tab" data-tab="quotes" type="button">Orders</button>
+      <button role="tab" data-tab="quotes" type="button">Orders <span class="badge" id="orders-badge" hidden></span></button>
       <button role="tab" data-tab="square" type="button">Square</button>
       <button role="tab" data-tab="inventory" type="button">Inventory</button>
       <button role="tab" data-tab="settings" type="button">Settings</button>
@@ -107,7 +108,10 @@
     <!-- orders -->
     <section data-panel="quotes" hidden>
       <div class="head"><div><h2>Orders</h2><p class="sub" id="quote-summary"></p></div>
-        <div class="row"><a class="btn" href="/api/admin/quotes.csv">Export CSV</a></div></div>
+        <div class="row"><button class="btn" id="notify-on" type="button" hidden>Turn on notifications</button>
+          <a class="btn" href="/api/admin/quotes.csv">Export CSV</a></div></div>
+      <p class="sub" id="notify-note" hidden></p>
+      <div class="alert" id="pay-problem" role="alert" hidden></div>
       <p class="status bad" id="quote-pay-error" role="status" hidden></p>
       <div class="table-wrap">
         <table>
@@ -128,15 +132,16 @@
           <button class="btn" id="sq-test" type="button">Test connection</button>
           <div id="sq-locations" class="status"></div>
         </div>
-        <form class="panel" id="sq-pay-form">
+        <div class="panel" id="sq-pay-form">
           <h3>Payment links</h3>
           <p class="sub">Customers pay through Square when they check out: on their own phone they go straight to Square's checkout, and the kiosk shows a QR code to scan. The link is also in the confirmation email and PDF. Shipping is added at checkout when they choose it. Prices already include tax.</p>
           <label class="check"><input type="checkbox" id="sq-pay-on"> Take payment at checkout</label>
           <div class="field" style="margin-top:10px"><label for="sq-location">Square location payments go to</label>
             <select id="sq-location"><option value="">First active location</option></select></div>
-          <button class="btn primary" type="submit">Save</button>
-          <span class="status inline" id="sq-pay-status"></span>
-        </form>
+          <div class="alert" id="sq-pay-problem" role="alert" hidden></div>
+          <div class="row"><button class="btn" id="sq-pay-test" type="button">Test payment link</button></div>
+          <p class="status" id="sq-pay-status" role="status"></p>
+        </div>
         <div class="panel">
           <h3>Push catalog</h3>
           <label class="check"><input type="checkbox" id="sq-overwrite"> Update prices in Square when re-pushing</label>

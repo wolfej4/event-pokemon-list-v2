@@ -1,6 +1,9 @@
 (function(){
   "use strict";
   var $ = function(id){ return document.getElementById(id); };
+  // every form here is saved with fetch; never let one fall back to a full
+  // page reload, which would drop unsaved changes and jump back to Designs
+  document.addEventListener("submit", function(e){ e.preventDefault(); }, true);
   var designs = [], settings = {}, status = {};
   function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
   function money(c){ return (c/100).toLocaleString("en-US", { style:"currency", currency: settings.currency || "USD" }); }
@@ -19,7 +22,7 @@
   function setStatus(el, msg, kind){ el.textContent = msg; el.className = el.className.replace(/\b(ok|bad)\b/g, "").trim() + (kind ? " " + kind : ""); }
 
   // ---------- auth ----------
-  function showLogin(){ $("app").hidden = true; $("login").hidden = false; $("pw").focus(); }
+  function showLogin(){ stopOrderWatch(); $("app").hidden = true; $("login").hidden = false; $("pw").focus(); }
   function showApp(){ $("login").hidden = true; $("app").hidden = false; boot(); }
   $("login-form").addEventListener("submit", function(e){
     e.preventDefault(); $("login-err").textContent = "";
@@ -33,6 +36,8 @@
   // ---------- tabs ----------
   document.querySelector(".tabs").addEventListener("click", function(e){
     var b = e.target.closest("[data-tab]"); if (!b) return;
+    // remember the tab in the URL so a reload comes back to it
+    try { history.replaceState(null, "", "#" + (b.dataset.tab === "quotes" ? "orders" : b.dataset.tab)); } catch(err){}
     [].forEach.call(this.children, function(x){ x.classList.toggle("active", x === b); });
     [].forEach.call(document.querySelectorAll("[data-panel]"), function(p){ p.hidden = p.dataset.panel !== b.dataset.tab; });
     if (b.dataset.tab === "quotes") loadQuotes();
@@ -43,7 +48,11 @@
   function boot(){
     Promise.all([api("/settings"), api("/status")]).then(function(r){
       settings = r[0]; status = r[1];
-      fillSettings(); fillSmtp(); fillPricing(); renderConn(); renderLogos(); renderStorageAlert();
+      fillSettings(); fillSmtp(); fillPricing(); renderConn(); renderLogos(); renderStorageAlert(); renderPayProblem();
+      startOrderWatch();
+      var tab = location.hash.slice(1) === "orders" ? "quotes" : location.hash.slice(1);
+      var tabBtn = tab && document.querySelector('.tabs [data-tab="' + tab.replace(/[^a-z]/g, "") + '"]');
+      if (tabBtn) tabBtn.click();
       if (settings.businessName) $("bar-title").textContent = settings.businessName + " admin";
       return loadDesigns();
     }).catch(function(e){ setStatus($("sync-status"), e.message, "bad"); });
@@ -299,6 +308,7 @@
   function loadQuotes(){
     api("/quotes").then(function(r){
       var list = r.data || [];
+      status.paymentProblem = r.paymentProblem; renderPayProblem();
       $("quote-pay-error").hidden = !r.paymentError;
       $("quote-pay-error").textContent = r.paymentError ? "Couldn\u2019t check payments with Square: " + r.paymentError : "";
       $("quote-summary").textContent = list.length ? list.length + " orders, " + list.filter(function(q){ return q.status === "new"; }).length + " new" : "No orders yet.";
@@ -322,7 +332,7 @@
   $("quote-rows").addEventListener("change", function(e){
     if (!e.target.classList.contains("q-status")) return;
     var id = e.target.closest("tr").dataset.id;
-    api("/quotes/" + encodeURIComponent(id), { method:"POST", body:{ status: e.target.value } });
+    api("/quotes/" + encodeURIComponent(id), { method:"POST", body:{ status: e.target.value } }).then(checkNewOrders);
   });
   var ORDER_STATUSES = ["new","printing","ready","shipped","completed","cancelled"];
   function payCell(q){
@@ -330,7 +340,8 @@
     if (p && p.status === "paid") return '<span class="pill ok">Paid</span>' + (p.ship_to ? '<div class="dm ship-to">' + esc(p.ship_to).replace(/\n/g, "<br>") + '</div>' : '');
     if (p && p.url) return '<span class="pill warn">Unpaid</span> <a class="dm" href="' + esc(p.url) + '" target="_blank" rel="noopener">Link</a>';
     var btn = status.square ? '<button class="btn ghost small" data-paylink type="button">Create link</button>' : '';
-    return (p && p.error ? '<span class="pill bad" title="' + esc(p.error) + '">Link failed</span> ' : '<span class="muted">\u2014</span> ') + btn;
+    return (p && p.error ? '<span class="pill bad">Link failed</span> ' : '<span class="muted">\u2014</span> ') + btn +
+      (p && p.error ? '<div class="dm pay-err">' + esc(p.error) + '</div>' : '');
   }
   $("quote-rows").addEventListener("click", function(e){
     var pb = e.target.closest("[data-paylink]");
@@ -349,6 +360,79 @@
       .catch(function(err){ note.textContent = err.message; })
       .finally(function(){ b.disabled = false; });
   });
+
+  // ---------- new-order badge and notifications ----------
+  var SEEN_KEY = "n3dcat-admin-last-order", orderTimer = null, baseTitle = document.title;
+  var canNotify = "Notification" in window && window.isSecureContext;
+  var swReg = null;
+  if ("serviceWorker" in navigator && window.isSecureContext) {
+    navigator.serviceWorker.register("/admin/sw.js", { scope: "/admin" }).then(function(r){ swReg = r; }).catch(function(){});
+    navigator.serviceWorker.addEventListener("message", function(e){ if (e.data && e.data.type === "open-orders") openOrdersTab(); });
+  }
+  function openOrdersTab(){ document.querySelector('[data-tab="quotes"]').click(); }
+  function lastSeen(){ try { return localStorage.getItem(SEEN_KEY); } catch(e){ return null; } }
+  function setLastSeen(v){ try { localStorage.setItem(SEEN_KEY, v); } catch(e){} }
+
+  function renderNotifyControls(){
+    var btn = $("notify-on"), note = $("notify-note");
+    if (!canNotify) {
+      btn.hidden = true; note.hidden = false;
+      note.textContent = window.isSecureContext ? "This browser doesn\u2019t support notifications. The red count on the Orders tab still updates."
+        : "Browser notifications need the admin opened over HTTPS. The red count on the Orders tab still updates.";
+      return;
+    }
+    btn.hidden = Notification.permission !== "default";
+    note.hidden = Notification.permission !== "denied";
+    note.textContent = "Notifications are blocked for this site. Allow them in your browser\u2019s site settings to get new-order alerts.";
+  }
+  $("notify-on").addEventListener("click", function(){
+    Notification.requestPermission().then(function(p){
+      renderNotifyControls();
+      if (p === "granted") notify("Notifications are on", "You\u2019ll get an alert here when a new order comes in.", "test");
+    });
+  });
+
+  function notify(title, body, tag){
+    if (!canNotify || Notification.permission !== "granted") return;
+    var opts = { body: body, tag: tag, icon: "/admin/assets/icon-192.png", badge: "/admin/assets/icon-192.png" };
+    // Android Chrome only allows notifications from a service worker
+    if (swReg && swReg.showNotification) return swReg.showNotification(title, opts).catch(function(){});
+    try {
+      var n = new Notification(title, opts);
+      n.onclick = function(){ window.focus(); openOrdersTab(); n.close(); };
+    } catch(e){}
+  }
+
+  function checkNewOrders(){
+    return api("/orders/new").then(function(r){
+      var badge = $("orders-badge");
+      badge.hidden = !r.count;
+      badge.textContent = r.count > 99 ? "99+" : r.count;
+      badge.setAttribute("aria-label", r.count + " new orders");
+      document.title = (r.count ? "(" + r.count + ") " : "") + baseTitle;
+      if (navigator.setAppBadge) (r.count ? navigator.setAppBadge(r.count) : navigator.clearAppBadge()).catch(function(){});
+
+      var seen = lastSeen(), newest = r.orders.length ? r.orders[0].created_at : null;
+      if (!seen) { setLastSeen(newest || new Date().toISOString()); return; } // first run: don't alert for old orders
+      var fresh = r.orders.filter(function(o){ return o.created_at > seen; });
+      if (!fresh.length) return;
+      setLastSeen(fresh[0].created_at);
+      if (fresh.length === 1) {
+        var o = fresh[0];
+        notify("New order " + o.id, o.name + " \u2014 " + o.total + (o.fulfillment === "ship" ? ", ship" : o.fulfillment === "pickup" ? ", pickup" : ""), o.id);
+      } else {
+        notify(fresh.length + " new orders", fresh.map(function(o){ return o.name + " (" + o.total + ")"; }).join(", "), "orders");
+      }
+      if (!$("quote-rows").closest("[data-panel]").hidden) loadQuotes();
+    }).catch(function(){});
+  }
+  function startOrderWatch(){
+    stopOrderWatch(); renderNotifyControls(); checkNewOrders();
+    orderTimer = setInterval(checkNewOrders, 30000);
+  }
+  function stopOrderWatch(){ if (orderTimer) clearInterval(orderTimer); orderTimer = null; }
+  // check right away when the tab comes back into view instead of waiting for the next tick
+  document.addEventListener("visibilitychange", function(){ if (!document.hidden && orderTimer) checkNewOrders(); });
 
   // ---------- inventory / spoolman ----------
   var spInited = false;
@@ -406,9 +490,30 @@
 
   // ---------- square ----------
   var sqLocLoaded = false;
+  function renderPayProblem(){
+    var msg = status.paymentProblem || "";
+    [["pay-problem", ' <a href="#" data-goto-square>Open the Square tab</a> to fix it, then use \u201cCreate link\u201d and \u201cResend\u201d on the orders below.'], ["sq-pay-problem", ""]].forEach(function(x){
+      var el = $(x[0]); el.hidden = !msg;
+      el.innerHTML = msg ? '<strong>Customers can\u2019t pay online right now.</strong> ' + esc(msg) + x[1] : "";
+    });
+  }
+  function refreshPayProblem(){ return api("/status").then(function(s){ status = s; renderPayProblem(); }); }
+  document.addEventListener("click", function(e){
+    if (!e.target.closest("[data-goto-square]")) return;
+    e.preventDefault(); document.querySelector('[data-tab="square"]').click();
+  });
+  $("sq-pay-test").addEventListener("click", function(){
+    var b = this; b.disabled = true;
+    setStatus($("sq-pay-status"), "Asking Square for a $1 test link\u2026");
+    api("/square/test-payment-link", { method:"POST" })
+      .then(function(){ setStatus($("sq-pay-status"), "Square created a test payment link (and it was deleted again). Payments are ready" + (settings.squarePaymentLinks ? "." : " once you turn on \u201cTake payment at checkout\u201d and save."), "ok"); })
+      .catch(function(err){ setStatus($("sq-pay-status"), "Square refused: " + err.message, "bad"); })
+      .finally(function(){ b.disabled = !status.square; refreshPayProblem(); });
+  });
   function initSquarePay(){
     $("sq-pay-on").checked = !!settings.squarePaymentLinks;
-    $("sq-pay-on").disabled = !status.square;
+    $("sq-pay-on").disabled = $("sq-pay-test").disabled = !status.square;
+    renderPayProblem();
     if (sqLocLoaded || !status.square) return;
     sqLocLoaded = true;
     api("/square/test").then(function(r){
@@ -417,11 +522,20 @@
       }).join("");
     }).catch(function(e){ sqLocLoaded = false; setStatus($("sq-pay-status"), e.message, "bad"); });
   }
-  $("sq-pay-form").addEventListener("submit", function(e){
-    e.preventDefault();
-    api("/settings", { method:"POST", body:{ squarePaymentLinks: $("sq-pay-on").checked, squareLocationId: $("sq-location").value } })
-      .then(function(s){ settings = s; setStatus($("sq-pay-status"), "Saved.", "ok"); })
-      .catch(function(err){ setStatus($("sq-pay-status"), err.message, "bad"); });
+  // both save as soon as they change, like the other switches in admin
+  function saveSquarePay(body, revert){
+    setStatus($("sq-pay-status"), "Saving\u2026");
+    api("/settings", { method:"POST", body: body })
+      .then(function(s){ settings = s; setStatus($("sq-pay-status"), "Saved.", "ok"); return refreshPayProblem(); })
+      .catch(function(err){ revert(); setStatus($("sq-pay-status"), "Not saved: " + err.message, "bad"); });
+  }
+  $("sq-pay-on").addEventListener("change", function(){
+    var box = this;
+    saveSquarePay({ squarePaymentLinks: box.checked }, function(){ box.checked = !box.checked; });
+  });
+  $("sq-location").addEventListener("change", function(){
+    var sel = this;
+    saveSquarePay({ squareLocationId: sel.value }, function(){ sel.value = settings.squareLocationId || ""; });
   });
   $("sq-test").addEventListener("click", function(){
     setStatus($("sq-locations"), "Connecting to Square…");

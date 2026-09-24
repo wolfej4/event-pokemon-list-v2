@@ -38,6 +38,7 @@ router.get("/status", (req, res) => {
     square: square.configured(),
     squareEnv: square.isSandbox() ? "sandbox" : "production",
     spoolman: spoolman.configured(),
+    paymentProblem: payments.problem(),
     storageError: db.writeError()
   });
 });
@@ -232,7 +233,20 @@ router.get("/quotes", async (req, res) => {
     catch (e) { paymentError = e.message; }
   }
   const cur = db.getSettings().currency;
-  res.json({ paymentError, data: db.allQuotes().map(q => Object.assign({}, q, { total: fmt(q.total_cents, cur), token: undefined })) });
+  res.json({ paymentError, paymentProblem: payments.problem(), data: db.allQuotes().map(q => Object.assign({}, q, { total: fmt(q.total_cents, cur), token: undefined })) });
+});
+
+// Cheap poll for the admin badge and notifications: orders still marked "new".
+router.get("/orders/new", (req, res) => {
+  const cur = db.getSettings().currency;
+  const list = db.allQuotes().filter(q => q.status === "new");
+  res.json({
+    count: list.length,
+    orders: list.slice(0, 20).map(q => ({
+      id: q.id, name: q.customer.name, total: fmt(q.total_cents, cur),
+      fulfillment: q.fulfillment || null, created_at: q.created_at
+    }))
+  });
 });
 
 router.post("/quotes/:id/payment-link", async (req, res) => {
@@ -339,6 +353,12 @@ async function pushOne(slug) {
 
 router.post("/square/push/:slug", async (req, res) => {
   try { res.json({ ok: true, data: toAdmin(await pushOne(req.params.slug), db.getSettings()) }); }
+  catch (e) { res.status(502).json({ error: e.message }); }
+});
+
+router.post("/square/test-payment-link", async (req, res) => {
+  if (!square.configured()) return res.status(400).json({ error: "SQUARE_ACCESS_TOKEN isn't set." });
+  try { const l = await payments.testLink(req); res.json({ ok: true, location_id: l.location_id }); }
   catch (e) { res.status(502).json({ error: e.message }); }
 });
 
