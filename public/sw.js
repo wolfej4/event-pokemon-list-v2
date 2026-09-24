@@ -4,7 +4,7 @@
 // as they're fetched (network-first, falling back to cache when offline),
 // and design images are cached opportunistically the first time they load.
 
-const CACHE_NAME = "n3d-catalog-v1";
+const CACHE_NAME = "n3d-catalog-v2";
 const APP_SHELL = [
   "/",
   "/assets/theme.css",
@@ -13,7 +13,9 @@ const APP_SHELL = [
   "/manifest.json",
   "/assets/icon-192.png",
   "/assets/icon-512.png",
-  "/assets/apple-touch-icon.png"
+  "/assets/apple-touch-icon.png",
+  "/favicon.ico",
+  "/assets/favicon.png"
 ];
 const API_PATHS = ["/api/public/designs", "/api/public/settings"];
 
