@@ -8,9 +8,10 @@ let lastError = null; // { message, at, id } from the most recent failed link
 
 // Square sends the customer back here after paying. Only offered over HTTPS,
 // since a plain-http LAN address is useless to a phone outside the network.
-function redirectUrl(req, id) {
+// Lands on the order confirmation page; the token lets it show the order's details.
+function redirectUrl(req, quote) {
   if (req.protocol !== "https") return undefined;
-  return `https://${req.get("host")}/?paid=${encodeURIComponent(id)}`;
+  return `https://${req.get("host")}/order/${encodeURIComponent(quote.id)}?t=${quote.token}`;
 }
 
 // Why customers can't pay right now, or null if they can.
@@ -27,7 +28,7 @@ async function testLink(req) {
   const link = await square.createPaymentLink({
     id: "TEST-" + Date.now(), fulfillment: "pickup", shipping_cents: 0, customer: {},
     items: [{ title: "Payment link test", qty: 1, unit_cents: 100 }]
-  }, { currency: s.currency || "USD", locationId: s.squareLocationId, redirectUrl: redirectUrl(req, "TEST") });
+  }, { currency: s.currency || "USD", locationId: s.squareLocationId, redirectUrl: redirectUrl(req, { id: "TEST", token: "test" }) });
   try { await square.deletePaymentLink(link.link_id); } catch (e) { /* harmless leftover test link */ }
   lastError = null;
   return link;
@@ -42,7 +43,7 @@ async function attachLink(quote, req) {
     payment = await square.createPaymentLink(quote, {
       currency: s.currency || "USD",
       locationId: s.squareLocationId,
-      redirectUrl: redirectUrl(req, quote.id)
+      redirectUrl: redirectUrl(req, quote)
     });
     lastError = null;
   } catch (e) {

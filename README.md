@@ -97,7 +97,9 @@ Behind HTTPS (Nginx Proxy Manager, Traefik, Cloudflare Tunnel), set
   customers to Square to pay (a QR code on the kiosk), and the link is also in
   the email and PDF. Customers choose shipping (flat rate, set on the
   Pricing tab) or free local pickup; Square collects the shipping address at
-  checkout. Prices are treated as tax-included. The Orders tab checks Square
+  checkout. After paying, Square sends the customer to an order
+  confirmation page (`/order/<id>`) showing payment status, what they ordered,
+  and where it's shipping (or pickup details). Needs the site on HTTPS. Prices are treated as tax-included. The Orders tab checks Square
   for payments each time it loads and shows the shipping address once paid.
   Extra token scopes: `ORDERS_READ`, `ORDERS_WRITE`, `PAYMENTS_WRITE` (a personal
   access token already has them). `SQUARE_LOCATION_ID` picks the location if

@@ -40,11 +40,6 @@
     var t = $("toast"); t.textContent = msg; t.hidden = false;
     clearTimeout(toast._t); toast._t = setTimeout(function(){ t.hidden = true; }, ms || 1800);
   }
-  // Square sends customers back here with ?paid=<order id> after checkout
-  if (params.get("paid")) {
-    toast("Thanks! Order " + params.get("paid") + " is paid. Square is emailing your receipt.", 6000);
-    try { params.delete("paid"); history.replaceState(null, "", location.pathname + (params.toString() ? "?" + params : "")); } catch(e){}
-  }
 
   // ---------- load ----------
   Promise.all([
