@@ -58,7 +58,7 @@ async function createPaymentLink(quote, { currency, locationId, redirectUrl }) {
   if (redirectUrl) checkout_options.redirect_url = redirectUrl;
   const j = await call("POST", "/v2/online-checkout/payment-links", {
     idempotency_key: "quote-" + quote.id,
-    description: "Estimate " + quote.id,
+    description: "Order " + quote.id,
     order: {
       location_id,
       reference_id: quote.id,
@@ -69,7 +69,7 @@ async function createPaymentLink(quote, { currency, locationId, redirectUrl }) {
       }))
     },
     checkout_options,
-    pre_populated_data: { buyer_email: quote.customer.email }
+    pre_populated_data: quote.customer.email ? { buyer_email: quote.customer.email } : undefined
   });
   const l = j.payment_link || {};
   return { url: l.url || l.long_url, link_id: l.id, order_id: l.order_id, location_id, status: "unpaid" };
@@ -216,4 +216,6 @@ async function pushDesign(d, priceCents, { currency = "USD", overwritePrice = tr
   return out;
 }
 
-module.exports = { createPaymentLink, paymentStatuses, isSandbox, configured, testConnection, pushDesign, describe };
+async function deletePaymentLink(id) { await call("DELETE", "/v2/online-checkout/payment-links/" + encodeURIComponent(id)); }
+
+module.exports = { createPaymentLink, deletePaymentLink, paymentStatuses, isSandbox, configured, testConnection, pushDesign, describe };

@@ -61,3 +61,6 @@ button,input,select,textarea{ font:inherit; color:inherit; }
 .field textarea{ resize:vertical; min-height:80px; }
 .input:focus, .field input:focus, .field textarea:focus, .field select:focus{ border-color:var(--accent); }
 .sr-only{ position:absolute; width:1px; height:1px; overflow:hidden; clip:rect(0 0 0 0); white-space:nowrap; }
+
+/* the hidden attribute always wins over component display rules (.btn is flex, etc.) */
+[hidden]{ display:none !important; }

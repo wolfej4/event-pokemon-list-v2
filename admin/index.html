@@ -111,6 +111,7 @@
         <div class="row"><button class="btn" id="notify-on" type="button" hidden>Turn on notifications</button>
           <a class="btn" href="/api/admin/quotes.csv">Export CSV</a></div></div>
       <p class="sub" id="notify-note" hidden></p>
+      <div class="alert" id="pay-problem" role="alert" hidden></div>
       <p class="status bad" id="quote-pay-error" role="status" hidden></p>
       <div class="table-wrap">
         <table>
@@ -137,8 +138,10 @@
           <label class="check"><input type="checkbox" id="sq-pay-on"> Take payment at checkout</label>
           <div class="field" style="margin-top:10px"><label for="sq-location">Square location payments go to</label>
             <select id="sq-location"><option value="">First active location</option></select></div>
-          <button class="btn primary" type="submit">Save</button>
-          <span class="status inline" id="sq-pay-status"></span>
+          <div class="alert" id="sq-pay-problem" role="alert" hidden></div>
+          <div class="row"><button class="btn primary" type="submit">Save</button>
+          <button class="btn" id="sq-pay-test" type="button">Test payment link</button></div>
+          <p class="status" id="sq-pay-status" role="status"></p>
         </form>
         <div class="panel">
           <h3>Push catalog</h3>

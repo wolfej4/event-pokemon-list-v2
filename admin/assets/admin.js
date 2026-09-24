@@ -43,7 +43,7 @@
   function boot(){
     Promise.all([api("/settings"), api("/status")]).then(function(r){
       settings = r[0]; status = r[1];
-      fillSettings(); fillSmtp(); fillPricing(); renderConn(); renderLogos(); renderStorageAlert();
+      fillSettings(); fillSmtp(); fillPricing(); renderConn(); renderLogos(); renderStorageAlert(); renderPayProblem();
       startOrderWatch();
       if (location.hash === "#orders") openOrdersTab();
       if (settings.businessName) $("bar-title").textContent = settings.businessName + " admin";
@@ -301,6 +301,7 @@
   function loadQuotes(){
     api("/quotes").then(function(r){
       var list = r.data || [];
+      status.paymentProblem = r.paymentProblem; renderPayProblem();
       $("quote-pay-error").hidden = !r.paymentError;
       $("quote-pay-error").textContent = r.paymentError ? "Couldn\u2019t check payments with Square: " + r.paymentError : "";
       $("quote-summary").textContent = list.length ? list.length + " orders, " + list.filter(function(q){ return q.status === "new"; }).length + " new" : "No orders yet.";
@@ -332,7 +333,8 @@
     if (p && p.status === "paid") return '<span class="pill ok">Paid</span>' + (p.ship_to ? '<div class="dm ship-to">' + esc(p.ship_to).replace(/\n/g, "<br>") + '</div>' : '');
     if (p && p.url) return '<span class="pill warn">Unpaid</span> <a class="dm" href="' + esc(p.url) + '" target="_blank" rel="noopener">Link</a>';
     var btn = status.square ? '<button class="btn ghost small" data-paylink type="button">Create link</button>' : '';
-    return (p && p.error ? '<span class="pill bad" title="' + esc(p.error) + '">Link failed</span> ' : '<span class="muted">\u2014</span> ') + btn;
+    return (p && p.error ? '<span class="pill bad">Link failed</span> ' : '<span class="muted">\u2014</span> ') + btn +
+      (p && p.error ? '<div class="dm pay-err">' + esc(p.error) + '</div>' : '');
   }
   $("quote-rows").addEventListener("click", function(e){
     var pb = e.target.closest("[data-paylink]");
@@ -481,9 +483,30 @@
 
   // ---------- square ----------
   var sqLocLoaded = false;
+  function renderPayProblem(){
+    var msg = status.paymentProblem || "";
+    [["pay-problem", ' <a href="#" data-goto-square>Open the Square tab</a> to fix it, then use \u201cCreate link\u201d and \u201cResend\u201d on the orders below.'], ["sq-pay-problem", ""]].forEach(function(x){
+      var el = $(x[0]); el.hidden = !msg;
+      el.innerHTML = msg ? '<strong>Customers can\u2019t pay online right now.</strong> ' + esc(msg) + x[1] : "";
+    });
+  }
+  function refreshPayProblem(){ return api("/status").then(function(s){ status = s; renderPayProblem(); }); }
+  document.addEventListener("click", function(e){
+    if (!e.target.closest("[data-goto-square]")) return;
+    e.preventDefault(); document.querySelector('[data-tab="square"]').click();
+  });
+  $("sq-pay-test").addEventListener("click", function(){
+    var b = this; b.disabled = true;
+    setStatus($("sq-pay-status"), "Asking Square for a $1 test link\u2026");
+    api("/square/test-payment-link", { method:"POST" })
+      .then(function(){ setStatus($("sq-pay-status"), "Square created a test payment link (and it was deleted again). Payments are ready" + (settings.squarePaymentLinks ? "." : " once you turn on \u201cTake payment at checkout\u201d and save."), "ok"); })
+      .catch(function(err){ setStatus($("sq-pay-status"), "Square refused: " + err.message, "bad"); })
+      .finally(function(){ b.disabled = !status.square; refreshPayProblem(); });
+  });
   function initSquarePay(){
     $("sq-pay-on").checked = !!settings.squarePaymentLinks;
-    $("sq-pay-on").disabled = !status.square;
+    $("sq-pay-on").disabled = $("sq-pay-test").disabled = !status.square;
+    renderPayProblem();
     if (sqLocLoaded || !status.square) return;
     sqLocLoaded = true;
     api("/square/test").then(function(r){
@@ -495,7 +518,7 @@
   $("sq-pay-form").addEventListener("submit", function(e){
     e.preventDefault();
     api("/settings", { method:"POST", body:{ squarePaymentLinks: $("sq-pay-on").checked, squareLocationId: $("sq-location").value } })
-      .then(function(s){ settings = s; setStatus($("sq-pay-status"), "Saved.", "ok"); })
+      .then(function(s){ settings = s; setStatus($("sq-pay-status"), "Saved.", "ok"); return refreshPayProblem(); })
       .catch(function(err){ setStatus($("sq-pay-status"), err.message, "bad"); });
   });
   $("sq-test").addEventListener("click", function(){
