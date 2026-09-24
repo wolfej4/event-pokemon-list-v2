@@ -75,7 +75,6 @@
     light.classList.toggle("has-dark", distinct);
     dark.classList.toggle("has-light", distinct);
     if (showName === false) { $("brand").classList.add("sr-only"); light.alt = dark.alt = ""; }
-    $("favicon").href = logo.light;
   }
 
   // ---------- filters ----------
