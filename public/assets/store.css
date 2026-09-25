@@ -116,3 +116,23 @@ body.kiosk .site-footer{ display:none; }
 :root[data-theme="dark"] .logo-light.has-dark{ display:none; }
 :root:not([data-theme="dark"]) .logo-dark.has-light{ display:none; }
 @media (max-width:520px){ .logo{ height:30px; max-width:130px; } }
+
+/* evolution family: sprite strip on cards */
+.evo{ display:flex; align-items:center; gap:2px; padding-top:8px; margin-top:2px; border-top:1px dashed var(--line); overflow:hidden; }
+.evo img{ width:34px; height:34px; object-fit:contain; padding:2px; border-radius:8px; flex:none; }
+.evo img.me{ background:var(--accent-soft); box-shadow:inset 0 0 0 1.5px var(--accent); }
+.evo .arr{ color:var(--faint); font-size:.8rem; margin:0 1px; flex:none; }
+.evo .more{ font-size:.72rem; font-weight:700; color:var(--muted); background:var(--raised); border-radius:999px; padding:2px 7px; margin-left:4px; white-space:nowrap; flex:none; }
+
+/* evolution family: full tree in the design view */
+.family h3{ font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; color:var(--faint); margin:0 0 8px; }
+.fam{ display:flex; align-items:center; gap:8px; }
+.fam .arr{ color:var(--faint); font-size:1.1rem; flex:none; }
+.fam .stage{ display:grid; grid-template-columns:repeat(var(--cols), minmax(0, 1fr)); gap:4px; min-width:0; }
+.fam .stage:last-child{ flex:1; }
+.fam .mon{ display:flex; flex-direction:column; align-items:center; gap:2px; min-width:0; padding:4px 2px; border-radius:10px;
+  font:inherit; font-size:.74rem; color:var(--ink); background:none; border:1px solid var(--line); cursor:pointer; }
+.fam .mon span{ max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.fam .mon img{ width:48px; height:48px; max-width:100%; object-fit:contain; }
+.fam button.mon:hover{ border-color:var(--accent); }
+.fam .mon.me{ background:var(--accent-soft); color:var(--accent); font-weight:700; border-color:transparent; cursor:default; }

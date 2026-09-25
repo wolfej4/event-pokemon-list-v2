@@ -27,6 +27,7 @@
   function typeColor(t){ return TYPE_COLORS[String(t || "").toLowerCase()] || "var(--accent)"; }
   function esc(s){ return String(s == null ? "" : s).replace(/[&<>"']/g, function(c){ return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
   function safeUrl(u){ return /^https?:\/\//i.test(u || "") ? u : ""; }
+  function safeSrc(u){ return /^(https?:\/\/|\/(?!\/))/i.test(u || "") ? u : ""; } // also our own /sprites/ paths
   function safeColor(c){ return /^#[0-9a-f]{3,8}$/i.test(c || "") ? c : "#888"; }
 
   // the site used to have a cart; clear what older visits left behind
@@ -111,8 +112,63 @@
         '<div class="card-body"><div class="card-title">' + esc(d.title) + '</div>' +
         '<div class="card-meta">' + esc(meta) + '</div>' +
         '<div class="card-foot"><span class="price">' + priceHtml(d) + '</span></div>' +
+        evoStrip(d) +
         '</div></article>';
     }).join("");
+  }
+
+  // ---------- evolution family ----------
+  // d.family is a forest of { slug, to: [...] } holding only the family members
+  // this catalog has designs for (see familyFor in src/routes/public.js).
+  function spriteOf(slug){ var d = bySlug[slug]; return d ? safeSrc(d.sprite || d.image_url) : ""; }
+  function nameOf(slug){ var d = bySlug[slug]; return d ? ((d.pokemon && d.pokemon.name) || d.title) : ""; }
+  function familyPath(nodes, slug){ // root ... the node for slug
+    for (var i = 0; i < nodes.length; i++){
+      if (nodes[i].slug === slug) return [nodes[i]];
+      var sub = familyPath(nodes[i].to, slug);
+      if (sub) return [nodes[i]].concat(sub);
+    }
+    return null;
+  }
+  function familyCount(nodes){ return nodes.reduce(function(c, n){ return c + 1 + familyCount(n.to); }, 0); }
+
+  // Card strip: the line leading to this Pokémon, then onward while it doesn't
+  // branch (or the first two branches if it does), and "+N" for the rest.
+  var EVO_MAX = 4;
+  function evoStrip(d){
+    var path = d.family && familyPath(d.family, d.slug);
+    if (!path) return "";
+    var stages = path.map(function(n){ return [n]; }), tail = path[path.length - 1], count = path.length;
+    while (tail.to.length === 1 && count < EVO_MAX){ tail = tail.to[0]; stages.push([tail]); count++; }
+    if (tail.to.length > 1 && count < EVO_MAX){
+      var take = tail.to.slice(0, Math.min(2, EVO_MAX - count));
+      stages.push(take); count += take.length;
+    }
+    var more = familyCount(d.family) - count, names = [];
+    var html = stages.map(function(stage){
+      return stage.map(function(n){
+        names.push(nameOf(n.slug));
+        return '<img' + (n.slug === d.slug ? ' class="me"' : '') + ' loading="lazy" alt="" src="' + esc(spriteOf(n.slug)) + '">';
+      }).join("");
+    }).join('<span class="arr" aria-hidden="true">\u2192</span>');
+    return '<div class="evo" aria-label="Evolution family: ' + esc(names.join(", ")) + (more > 0 ? " and " + more + " more" : "") + '">' +
+      html + (more > 0 ? '<span class="more">+' + more + '</span>' : '') + '</div>';
+  }
+
+  // Design view: every stage as a column; tap another member to open it.
+  function familyHtml(d){
+    if (!d.family) return "";
+    var cols = [];
+    (function walk(nodes, depth){
+      nodes.forEach(function(n){ (cols[depth] = cols[depth] || []).push(n.slug); walk(n.to, depth + 1); });
+    })(d.family, 0);
+    return '<div class="family"><h3>Evolution family</h3><div class="fam">' + cols.map(function(col){
+      return '<div class="stage" style="--cols:' + Math.min(col.length, 4) + '">' + col.map(function(slug){
+        var inner = '<img alt="" src="' + esc(spriteOf(slug)) + '"><span>' + esc(nameOf(slug)) + '</span>';
+        return slug === d.slug ? '<span class="mon me" aria-current="true">' + inner + '</span>'
+          : '<button type="button" class="mon" data-goto="' + esc(slug) + '">' + inner + '</button>';
+      }).join("") + '</div>';
+    }).join('<span class="arr" aria-hidden="true">\u2192</span>') + '</div></div>';
   }
 
   $("grid").addEventListener("click", function(e){
@@ -154,6 +210,7 @@
           '<span class="g">' + (f.weight_grams ? Math.round(f.weight_grams) + " g" : "") + '</span></li>';
       }).join("") + '</ul>';
     }
+    h += familyHtml(d);
     if (d.shop_url && !kiosk && safeUrl(d.shop_url)) h += '<div class="actions"><a class="btn primary" href="' + esc(safeUrl(d.shop_url)) + '" target="_blank" rel="noopener">Buy online</a></div>';
     h += '</div>';
     var body = $("detail-body");
@@ -178,6 +235,8 @@
   }
   $("detail").addEventListener("click", function(e){
     if (e.target === this || e.target.closest("[data-close]")) return closeOverlay(this);
+    var go = e.target.closest("[data-goto]");
+    if (go) return openDetail(go.dataset.goto, 1);
     var nav = e.target.closest("[data-nav]");
     if (nav) step(Number(nav.dataset.nav));
   });

@@ -11,6 +11,14 @@ panel for pricing, N3D sync, and pushing to Square. Light and dark mode on both.
 - Each design shows its price, print time, weight and filament colors, plus a
   "Buy online" button when it has a shop link (hidden in kiosk mode).
 - Browse-only: there's no cart, online ordering or payment.
+- Evolution families: each card shows a strip of N3D sprites for the design's
+  evolution line (e.g. Squirtle → Wartortle → Blastoise, "+N" for branches like
+  Eevee), and the design view shows the whole family. Only Pokémon you have a
+  design for appear, and tapping one opens it. After each N3D sync the server
+  caches N3D's sprites in `/app/data/sprites` (re-downloading only when N3D
+  changes a sprite's revision) and looks up families on PokéAPI
+  (`/app/data/evolutions.json`, one lookup per new Pokémon). Run **Full resync**
+  once after updating, and occasionally afterwards to pick up redrawn sprites.
 - Light/dark toggle in the header. Follows the device setting until someone
   picks one, then remembers it.
 

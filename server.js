@@ -41,6 +41,16 @@ app.use(session({
   cookie: { httpOnly: true, sameSite: "lax", secure: process.env.COOKIE_SECURE === "true", maxAge: 12 * 3600 * 1000 }
 }));
 
+// cached N3D sprites; the ?v=<revision> in each URL makes them safe to cache forever
+app.get("/sprites/:file", (req, res) => {
+  const m = /^([a-z0-9_-]{1,120})\.webp$/i.exec(req.params.file);
+  const sprites = require("./src/sprites");
+  if (!m) return res.status(404).end();
+  res.sendFile(sprites.fileFor(m[1]), { headers: { "Cache-Control": "public, max-age=31536000, immutable" } }, (err) => {
+    if (err && !res.headersSent) res.status(404).end();
+  });
+});
+
 app.get("/healthz", (req, res) => res.json({ ok: true }));
 app.use("/api/public", require("./src/routes/public"));
 app.use("/api/admin", require("./src/routes/admin"));
@@ -65,7 +75,11 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: "server_error" });
 });
 
-const server = app.listen(PORT, () => console.log(`N3D catalog listening on :${PORT}`));
+const server = app.listen(PORT, () => {
+  console.log(`N3D catalog listening on :${PORT}`);
+  // catch up on sprites/families that a previous run didn't finish
+  setTimeout(() => require("./src/enrich").run(), 5000).unref();
+});
 function shutdown() {
   db.flushSync();
   server.close(() => process.exit(0));
