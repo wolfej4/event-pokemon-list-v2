@@ -28,6 +28,9 @@ app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "same-origin");
   res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  // ask search engines and AI crawlers not to index or train on anything here
+  // (also covers images and API responses, which can't carry a <meta> tag)
+  res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive, noimageindex, noai, noimageai");
   next();
 });
 app.use(session({
