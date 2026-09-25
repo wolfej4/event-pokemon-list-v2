@@ -8,7 +8,7 @@ const sharp = require("sharp");
 const db = require("./db");
 
 // bump when the processing below changes, so cached copies are redone
-const PROCESS = "t2";
+const PROCESS = "t3";
 const DIR = () => path.join(db.DATA_DIR, "sprites");
 const safeName = (slug) => String(slug).replace(/[^a-z0-9_-]/gi, "_").slice(0, 120);
 const fileFor = (slug) => path.join(DIR(), safeName(slug) + ".webp");
@@ -26,13 +26,12 @@ async function fetchOne(d) {
   const res = await fetch(d.sprite_url);
   if (!res.ok) throw new Error("HTTP " + res.status);
   const buf = Buffer.from(await res.arrayBuffer());
-  // Trim empty transparent margins so the artwork fills its slot, then fit it
-  // into a transparent 192px square (display sizes top out around 64px).
-  let trimmed = buf;
-  try { trimmed = await sharp(buf).trim({ threshold: 1 }).toBuffer(); } catch (e) { /* nothing to trim */ }
-  const meta = await sharp(trimmed).metadata();
+  // Fit into a transparent 192px square (display sizes top out around 64px).
+  // No trimming: N3D draws every ball on the same square frame, so keeping the
+  // frame keeps the balls the same size next to each other.
+  const meta = await sharp(buf).metadata();
   const small = Math.max(meta.width || 0, meta.height || 0) < 192;
-  const out = await sharp(trimmed).resize(192, 192, {
+  const out = await sharp(buf).resize(192, 192, {
     fit: "contain", background: { r: 0, g: 0, b: 0, alpha: 0 },
     kernel: small ? "nearest" : "lanczos3" // enlarging pixel art: keep hard pixel edges
   }).webp({ quality: 90, alphaQuality: 100 }).toBuffer();
