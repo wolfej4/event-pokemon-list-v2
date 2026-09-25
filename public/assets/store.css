@@ -63,6 +63,17 @@ main{ max-width:1200px; margin:0 auto; padding:8px clamp(16px, 4vw, 40px) 60px; 
   animation:pop .16s ease-out;
 }
 @keyframes pop{ from{ transform:scale(.98); opacity:0; } to{ transform:none; opacity:1; } }
+/* stepping between designs: horizontal swipes are ours, vertical scroll and zoom stay native */
+.dialog{ touch-action:pan-y pinch-zoom; }
+.dialog.from-right{ animation:from-right .2s ease-out; }
+.dialog.from-left{ animation:from-left .2s ease-out; }
+@keyframes from-right{ from{ transform:translateX(28px); opacity:.35; } to{ transform:none; opacity:1; } }
+@keyframes from-left{ from{ transform:translateX(-28px); opacity:.35; } to{ transform:none; opacity:1; } }
+.detail-top{ display:flex; justify-content:space-between; align-items:center; gap:12px; }
+.detail-nav{ display:flex; align-items:center; gap:6px; }
+.detail-nav .btn{ min-width:38px; font-size:1.15rem; line-height:1; padding:6px 10px; }
+.detail-nav .pos{ color:var(--faint); font-size:.82rem; font-variant-numeric:tabular-nums; min-width:4.5em; text-align:center; }
+@media (prefers-reduced-motion: reduce){ .dialog.from-right, .dialog.from-left{ animation:none; } }
 .dialog .media{ background:var(--raised); }
 .dialog .media img{ width:100%; aspect-ratio:1; object-fit:cover; }
 .dialog .info{ padding:24px; display:flex; flex-direction:column; gap:14px; }

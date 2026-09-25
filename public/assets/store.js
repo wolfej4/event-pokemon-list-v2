@@ -5,6 +5,7 @@
 
   var designs = [], bySlug = {}, settings = {}, filter = { cat:"all", q:"" };
   var lastFocus = null;
+  var shown = [], currentSlug = null; // grid order, for stepping through designs in the detail view
 
   // ---------- kiosk mode (?kiosk=1 to turn on for this device, ?kiosk=0 to turn off) ----------
   var params = new URLSearchParams(location.search);
@@ -97,6 +98,7 @@
 
   function render(){
     var list = designs.filter(matches);
+    shown = list.map(function(d){ return d.slug; });
     $("result-count").textContent = list.length + (list.length === 1 ? " design" : " designs");
     $("empty").hidden = list.length > 0 || designs.length === 0;
     if (!designs.length) $("result-count").textContent = "No designs are listed yet.";
@@ -124,12 +126,20 @@
   function openOverlay(el){ lastFocus = document.activeElement; el.hidden = false; document.body.style.overflow = "hidden"; }
   function closeOverlay(el){ el.hidden = true; document.body.style.overflow = ""; if (lastFocus) lastFocus.focus(); }
 
-  function openDetail(slug){
+  // dir: +1 / -1 when stepping from the neighboring design (slides the new one in)
+  function openDetail(slug, dir){
     var d = bySlug[slug]; if (!d) return;
     var p = d.pokemon;
+    var i = shown.indexOf(slug), n = shown.length;
+    currentSlug = slug;
     var h = '<div class="media">' + (d.image_url ? '<img alt="' + esc(d.title) + '" src="' + esc(safeUrl(d.image_url)) + '">' : '') + spool(d) + '</div>';
-    h += '<div class="info"><div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start">' +
-      '<h2 id="detail-title">' + esc(d.title) + '</h2><button type="button" class="btn ghost small" data-close>Close</button></div>';
+    h += '<div class="info"><div class="detail-top">' +
+      (i > -1 && n > 1 ? '<div class="detail-nav">' +
+        '<button type="button" class="btn ghost small" data-nav="-1" aria-label="Previous design"' + (i === 0 ? " disabled" : "") + '>\u2039</button>' +
+        '<span class="pos">' + (i + 1) + ' of ' + n + '</span>' +
+        '<button type="button" class="btn ghost small" data-nav="1" aria-label="Next design"' + (i === n - 1 ? " disabled" : "") + '>\u203a</button></div>' : '<span></span>') +
+      '<button type="button" class="btn ghost small" data-close>Close</button></div>' +
+      '<h2 id="detail-title">' + esc(d.title) + '</h2>';
     if (p && p.types && p.types.length) h += '<div class="types">' + p.types.map(function(t){
       return '<span style="--t-color:' + typeColor(t) + '">' + esc(t) + '</span>';
     }).join("") + '</div>';
@@ -146,16 +156,48 @@
     }
     if (d.shop_url && !kiosk && safeUrl(d.shop_url)) h += '<div class="actions"><a class="btn primary" href="' + esc(safeUrl(d.shop_url)) + '" target="_blank" rel="noopener">Buy online</a></div>';
     h += '</div>';
-    $("detail-body").innerHTML = h;
-    openOverlay($("detail"));
-    $("detail-body").querySelector("[data-close]").focus();
+    var body = $("detail-body");
+    body.innerHTML = h;
+    body.scrollTop = 0;
+    if (dir) {
+      body.classList.remove("from-left", "from-right");
+      void body.offsetWidth; // restart the slide animation
+      body.classList.add(dir > 0 ? "from-right" : "from-left");
+      var keep = body.querySelector('[data-nav="' + dir + '"]:not([disabled])');
+      (keep || body.querySelector("[data-close]")).focus();
+    } else {
+      openOverlay($("detail"));
+      body.querySelector("[data-close]").focus();
+    }
+    // warm up the neighbors' photos so swiping feels instant
+    [shown[i - 1], shown[i + 1]].forEach(function(s){ if (s && bySlug[s].image_url) new Image().src = safeUrl(bySlug[s].image_url); });
+  }
+  function step(dir){
+    var i = shown.indexOf(currentSlug), next = shown[i + dir];
+    if (i > -1 && next) openDetail(next, dir);
   }
   $("detail").addEventListener("click", function(e){
-    if (e.target === this || e.target.closest("[data-close]")) closeOverlay(this);
+    if (e.target === this || e.target.closest("[data-close]")) return closeOverlay(this);
+    var nav = e.target.closest("[data-nav]");
+    if (nav) step(Number(nav.dataset.nav));
   });
   document.addEventListener("keydown", function(e){
-    if (e.key === "Escape" && !$("detail").hidden) closeOverlay($("detail"));
+    if ($("detail").hidden) return;
+    if (e.key === "Escape") closeOverlay($("detail"));
+    else if (e.key === "ArrowRight") { e.preventDefault(); step(1); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); step(-1); }
   });
+  // swipe left for the next design, right for the previous one
+  var touch = null;
+  $("detail-body").addEventListener("touchstart", function(e){
+    touch = e.touches.length === 1 ? { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() } : null;
+  }, { passive: true });
+  $("detail-body").addEventListener("touchend", function(e){
+    if (!touch) return;
+    var t = e.changedTouches[0], dx = t.clientX - touch.x, dy = t.clientY - touch.y, quick = Date.now() - touch.t < 800;
+    touch = null;
+    if (quick && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) step(dx < 0 ? 1 : -1);
+  }, { passive: true });
 
   // ---------- kiosk idle reset ----------
   if (kiosk){
