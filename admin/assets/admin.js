@@ -135,7 +135,7 @@
     $("sync").disabled = $("full-sync").disabled = true;
     setStatus(el, full ? "Pulling the full catalog from N3D…" : "Checking N3D for new and changed designs…");
     api("/sync", { method:"POST", body:{ full: full } })
-      .then(function(r){ setStatus(el, "Sync finished: " + r.added + " new, " + r.updated + " updated.", "ok"); return api("/settings"); })
+      .then(function(r){ setStatus(el, "Sync finished: " + r.added + " new, " + r.updated + " updated. Sprites and evolution families update in the background over the next minute.", "ok"); return api("/settings"); })
       .then(function(s){ settings = s; return loadDesigns(); })
       .catch(function(e){ setStatus(el, "Sync failed: " + e.message, "bad"); })
       .finally(function(){ $("sync").disabled = $("full-sync").disabled = false; });

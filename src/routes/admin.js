@@ -11,6 +11,7 @@ const { buildQuotePdf } = require("../pdf");
 const { checkPassword, requireAdmin } = require("../auth");
 const rateLimit = require("../rateLimit");
 const logo = require("../logo");
+const enrich = require("../enrich");
 
 const router = express.Router();
 
@@ -37,7 +38,8 @@ router.get("/status", (req, res) => {
     square: square.configured(),
     squareEnv: square.isSandbox() ? "sandbox" : "production",
     spoolman: spoolman.configured(),
-    storageError: db.writeError()
+    storageError: db.writeError(),
+    enrich: enrich.state
   });
 });
 
@@ -207,6 +209,7 @@ router.post("/sync", async (req, res) => {
             print_time: d.print_time, total_weight_grams: d.total_weight_grams,
             round: d.round, purchase_only: d.purchase_only, updated_at: d.updated_at,
             pokemon: d.pokemon, filaments: d.filaments,
+            sprite_url: d.sprite_url || null, sprite_revision: d.sprite_revision || null,
             synced_at: new Date().toISOString(),
             // first-time defaults; undefined leaves existing admin values alone
             visible: isNew ? true : undefined,
@@ -218,6 +221,7 @@ router.post("/sync", async (req, res) => {
       }
     });
     if (result.cursor) db.updateSettings({ lastCursor: result.cursor });
+    enrich.run(); // sprites and evolution families, in the background
     res.json({ ok: true, added, updated, seen: result.total });
   } catch (e) {
     res.status(e.isAuth ? 502 : 500).json({ error: e.message || "Sync failed." });
