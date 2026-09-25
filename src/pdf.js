@@ -90,12 +90,6 @@ function buildQuotePdf(quote, settings) {
       .text(fmt(quote.total_cents, cur), L + 420, y, { width: W - 426, align: "right" });
     y += 30;
 
-    const payUrl = quote.payment && quote.payment.status !== "paid" && quote.payment.url;
-    if (payUrl) {
-      doc.font("Helvetica-Bold").fontSize(10).fillColor(accent).text("Pay online: ", L, y, { continued: true })
-        .font("Helvetica").text(payUrl, { link: payUrl, underline: true });
-      y = doc.y + 16;
-    }
 
     if (quote.customer.notes) {
       doc.font("Helvetica-Bold").fontSize(9).fillColor(muted).text("Notes from customer", L, y);

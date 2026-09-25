@@ -95,4 +95,4 @@ label.btn{ cursor:pointer; }
 .match-cell{ display:flex; align-items:center; gap:8px; }
 .match-cell .swatch-sm{ width:16px; height:16px; border-radius:5px; border:1px solid var(--line); flex:none; display:inline-block; }
 .designs-cell{ max-width:220px; color:var(--muted); font-size:.82rem; }
-.pay-err{ color:var(--bad); max-width:230px; margin-top:3px; }
+.err-note{ color:var(--bad); max-width:230px; margin-top:3px; }

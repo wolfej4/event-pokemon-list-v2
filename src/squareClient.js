@@ -51,67 +51,6 @@ async function testConnection() {
   return (j.locations || []).map(l => ({ id: l.id, name: l.name, status: l.status, currency: l.currency }));
 }
 
-// ---------- payment links ----------
-// Needs ORDERS_READ + ORDERS_WRITE + PAYMENTS_WRITE (a personal access token has all of them).
-async function resolveLocation(preferred) {
-  if (preferred) return preferred;
-  if (process.env.SQUARE_LOCATION_ID) return process.env.SQUARE_LOCATION_ID;
-  const active = (await testConnection()).find(l => l.status === "ACTIVE");
-  if (!active) throw new Error("No active Square location found.");
-  return active.id;
-}
-
-// Creates a Square checkout link for a quote. Prices already include tax, so
-// the order carries plain line items with no tax lines.
-async function createPaymentLink(quote, { currency, locationId, redirectUrl }) {
-  const location_id = await resolveLocation(locationId);
-  const ship = quote.fulfillment === "ship";
-  const checkout_options = { ask_for_shipping_address: ship };
-  if (ship && quote.shipping_cents > 0) checkout_options.shipping_fee = { name: "Shipping", charge: { amount: quote.shipping_cents, currency } };
-  if (redirectUrl) checkout_options.redirect_url = redirectUrl;
-  const j = await call("POST", "/v2/online-checkout/payment-links", {
-    idempotency_key: "quote-" + quote.id,
-    description: "Order " + quote.id,
-    order: {
-      location_id,
-      reference_id: quote.id,
-      line_items: quote.items.map(i => ({
-        name: String(i.title).slice(0, 500),
-        quantity: String(i.qty),
-        base_price_money: { amount: i.unit_cents, currency }
-      }))
-    },
-    checkout_options,
-    pre_populated_data: quote.customer.email ? { buyer_email: quote.customer.email } : undefined
-  });
-  const l = j.payment_link || {};
-  return { url: l.url || l.long_url, link_id: l.id, order_id: l.order_id, location_id, status: "unpaid" };
-}
-
-// Looks up the orders behind payment links and reports which are paid,
-// plus the shipping address the customer entered at checkout.
-async function paymentStatuses(locationId, orderIds) {
-  const out = {};
-  for (let i = 0; i < orderIds.length; i += 100) {
-    const j = await call("POST", "/v2/orders/batch-retrieve", { location_id: locationId, order_ids: orderIds.slice(i, i + 100) });
-    for (const o of j.orders || []) {
-      const due = o.net_amount_due_money ? o.net_amount_due_money.amount : null;
-      const paid = o.state === "COMPLETED" || ((o.tenders || []).length > 0 && due === 0);
-      const f = (o.fulfillments || []).find(x => x.shipment_details) || {};
-      const r = (f.shipment_details || {}).recipient;
-      let ship_to = null;
-      if (r) {
-        const a = r.address || {};
-        ship_to = [r.display_name, a.address_line_1, a.address_line_2,
-          [a.locality, a.administrative_district_level_1, a.postal_code].filter(Boolean).join(" "), a.country]
-          .filter(Boolean).join("\n");
-      }
-      out[o.id] = { paid, state: o.state, ship_to };
-    }
-  }
-  return out;
-}
-
 function describe(d) {
   const parts = [];
   if (d.pokemon) {
@@ -260,6 +199,4 @@ async function deleteItems(ids) {
   for (let i = 0; i < ids.length; i += 200) await call("POST", "/v2/catalog/batch-delete", { object_ids: ids.slice(i, i + 200) });
 }
 
-async function deletePaymentLink(id) { await call("DELETE", "/v2/online-checkout/payment-links/" + encodeURIComponent(id)); }
-
-module.exports = { envName, createPaymentLink, deletePaymentLink, paymentStatuses, isSandbox, configured, testConnection, upsertItem, uploadImage, listAppItems, deleteItems, describe };
+module.exports = { envName, isSandbox, configured, testConnection, upsertItem, uploadImage, listAppItems, deleteItems, describe };

@@ -92,7 +92,6 @@ main{ max-width:1200px; margin:0 auto; padding:8px clamp(16px, 4vw, 40px) 60px; 
   .dialog .media img{ aspect-ratio:4/3; }
 }
 
-.fine{ color:var(--faint); font-size:.8rem; margin:0 0 18px; }
 
 /* kiosk mode: bigger targets, no leaving the app */
 body.kiosk .card-title{ font-size:1.12rem; }
@@ -106,25 +105,3 @@ body.kiosk .site-footer{ display:none; }
 :root[data-theme="dark"] .logo-light.has-dark{ display:none; }
 :root:not([data-theme="dark"]) .logo-dark.has-light{ display:none; }
 @media (max-width:520px){ .logo{ height:30px; max-width:130px; } }
-
-/* ---------- order confirmation page ---------- */
-.order-page{ max-width:640px; padding-top:28px; }
-.order-card{ background:var(--surface); border:1px solid var(--line); border-radius:18px; padding:clamp(20px, 5vw, 36px); box-shadow:var(--shadow); }
-.order-card h1{ font-family:var(--display); font-size:clamp(1.45rem, 4.5vw, 1.9rem); line-height:1.15; margin:14px 0 6px; }
-.order-sub{ color:var(--muted); margin:0 0 20px; }
-.order-icon{ width:52px; height:52px; border-radius:50%; display:grid; place-items:center; }
-.order-icon svg{ width:28px; height:28px; }
-.order-icon.ok{ background:color-mix(in srgb, var(--ok) 16%, transparent); color:var(--ok); }
-.order-icon.wait{ background:var(--raised); color:var(--muted); }
-.order-next{ border:1px solid var(--line); border-radius:12px; padding:14px 16px; margin:0 0 18px; }
-.order-next h2{ font-size:.8rem; text-transform:uppercase; letter-spacing:.06em; color:var(--faint); margin:0 0 6px; }
-.order-next p{ margin:6px 0 0; }
-.order-next .addr{ font-weight:700; margin:0; }
-.order-lines{ margin:0 0 20px; }
-.ol{ display:flex; justify-content:space-between; gap:16px; padding:9px 0; border-bottom:1px solid var(--line); }
-.ol.sub{ color:var(--muted); border-bottom:none; padding:6px 0 0; }
-.ol.total{ border-bottom:none; border-top:1px solid var(--line); margin-top:8px; padding-top:12px; font-weight:700; font-size:1.1rem; }
-.order-actions{ display:flex; flex-wrap:wrap; gap:10px; margin:0 0 6px; }
-.order-actions .pay{ padding:12px 24px; }
-.order-help{ margin:14px 0 0; }
-.order-card .muted{ color:var(--faint); }

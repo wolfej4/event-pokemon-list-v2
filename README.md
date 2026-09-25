@@ -10,9 +10,7 @@ panel for pricing, N3D sync, and pushing to Square. Light and dark mode on both.
   strip of the design's actual filament colors.
 - Each design shows its price, print time, weight and filament colors, plus a
   "Buy online" button when it has a shop link (hidden in kiosk mode).
-- Browse-only: there's no cart or online ordering. (The order/checkout code is
-  still in place behind `ORDERING_ENABLED` in `src/payments.js`, but the cart
-  UI was removed.)
+- Browse-only: there's no cart, online ordering or payment.
 - Light/dark toggle in the header. Follows the device setting until someone
   picks one, then remembers it.
 
@@ -22,8 +20,7 @@ panel for pricing, N3D sync, and pushing to Square. Light and dark mode on both.
 - **Pricing:** formula for any design without a custom price:
   `(base fee + grams × per-gram + hours × per-hour) × (1 + markup%)`, with a
   minimum and optional round-up. Live preview as you type.
-- **Orders:** every order with payment status, shipping address once paid,
-  fulfillment status (new/printing/ready/shipped/completed/cancelled), PDF,
+- **Orders:** the orders placed while the site had a cart, with fulfillment status (new/printing/ready/shipped/completed/cancelled), PDF,
   resend email, CSV export.
   A red count on the Orders tab (and in the browser tab title) shows orders
   still marked "new"; click **Turn on notifications** for an alert when one
@@ -92,22 +89,4 @@ Behind HTTPS (Nginx Proxy Manager, Traefik, Cloudflare Tunnel), set
   included) in `db.json`. Click **Use environment variables instead** to go back.
 - Square token scopes: `ITEMS_READ`, `ITEMS_WRITE`, and `MERCHANT_PROFILE_READ`
   (for the connection test).
-- **Payment links** (currently off, since the storefront has no cart): checkout sends
-  customers to Square to pay (a QR code on the kiosk), and the link is also in
-  the email and PDF. Customers choose shipping (flat rate, set on the
-  Pricing tab) or free local pickup; Square collects the shipping address at
-  checkout. After paying, Square sends the customer to an order
-  confirmation page (`/order/<id>`) showing payment status, what they ordered,
-  and where it's shipping (or pickup details). Needs the site on HTTPS. Prices are treated as tax-included. The Orders tab checks Square
-  for payments each time it loads and shows the shipping address once paid.
-  Extra token scopes: `ORDERS_READ`, `ORDERS_WRITE`, `PAYMENTS_WRITE` (a personal
-  access token already has them). `SQUARE_LOCATION_ID` picks the location if
-  you don't choose one in admin.
-- **Apple Pay domain verification:** upload Apple's
-  `apple-developer-merchantid-domain-association` file in admin → Square and
-  it's served at `/.well-known/apple-developer-merchantid-domain-association`
-  (stored on the data volume). Square's hosted checkout already offers Apple
-  Pay on its own domain, so this is only needed if you're asked to verify yours.
 - Admin logins are in memory, so a container restart logs you out. Nothing else is lost.
-- Orders are rate limited per IP (40 per 10 minutes, since venue wifi shares one IP) and have a
-  honeypot field for bots.
