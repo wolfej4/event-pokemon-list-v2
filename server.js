@@ -28,6 +28,9 @@ app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("Referrer-Policy", "same-origin");
   res.setHeader("X-Frame-Options", "SAMEORIGIN");
+  // ask search engines and AI crawlers not to index or train on anything here
+  // (also covers images and API responses, which can't carry a <meta> tag)
+  res.setHeader("X-Robots-Tag", "noindex, nofollow, noarchive, noimageindex, noai, noimageai");
   next();
 });
 app.use(session({
@@ -37,21 +40,6 @@ app.use(session({
   saveUninitialized: false,
   cookie: { httpOnly: true, sameSite: "lax", secure: process.env.COOKIE_SECURE === "true", maxAge: 12 * 3600 * 1000 }
 }));
-
-// Apple Pay domain verification (uploaded in admin → Square)
-app.get("/.well-known/apple-developer-merchantid-domain-association", (req, res) => {
-  const f = require("./src/applePay").read();
-  if (!f) return res.status(404).type("text/plain").send("Not found");
-  res.type("text/plain").set("Cache-Control", "no-cache").send(f);
-});
-
-// Payment links made before the order page existed send customers to /?paid=<id>
-app.get("/", (req, res, next) => {
-  if (!req.query.paid) return next();
-  res.redirect(302, "/order/" + encodeURIComponent(String(req.query.paid).slice(0, 40)));
-});
-// order confirmation page (Square sends customers here after paying)
-app.get("/order/:id", (req, res) => res.set("Cache-Control", "no-cache").sendFile(path.join(__dirname, "public", "order.html")));
 
 app.get("/healthz", (req, res) => res.json({ ok: true }));
 app.use("/api/public", require("./src/routes/public"));

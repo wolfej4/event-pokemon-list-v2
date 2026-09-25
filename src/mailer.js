@@ -47,8 +47,6 @@ function itemLines(q, cur) {
   if (q.fulfillment === "pickup") lines.push("  Local pickup — free");
   return lines.join("\n");
 }
-const payLine = (q) => q.payment && q.payment.url && q.payment.status !== "paid"
-  ? `\n\nIf you haven't paid yet, you can pay here: ${q.payment.url}${q.fulfillment === "ship" ? "\nYou'll enter your shipping address at checkout." : ""}` : "";
 
 // Sends the customer copy and the business copy. Returns {customer, business} status strings.
 async function sendQuoteEmails(q, pdf, settings) {
@@ -65,7 +63,7 @@ async function sendQuoteEmails(q, pdf, settings) {
       to: q.customer.email,
       replyTo: settings.businessEmail || undefined,
       subject: `Your order ${q.id} from ${shop}`,
-      text: `Hi ${q.customer.name},\n\nThanks for your order! A summary is attached.\n\n${itemLines(q, cur)}\n\nTotal: ${fmt(q.total_cents, cur)}${payLine(q)}\n\n${q.fulfillment === "pickup" ? "We'll email you when it's ready for pickup." : "We'll email you when it ships."} Reply to this email with any questions.\n\n${shop}`,
+      text: `Hi ${q.customer.name},\n\nThanks for your order! A summary is attached.\n\n${itemLines(q, cur)}\n\nTotal: ${fmt(q.total_cents, cur)}\n\n${q.fulfillment === "pickup" ? "We'll email you when it's ready for pickup." : "We'll email you when it ships."} Reply to this email with any questions.\n\n${shop}`,
       attachments: [attachment]
     });
     result.customer = "sent";
@@ -78,7 +76,7 @@ async function sendQuoteEmails(q, pdf, settings) {
         to: settings.businessEmail,
         replyTo: q.customer.email,
         subject: `New order ${q.id} — ${q.customer.name} (${fmt(q.total_cents, cur)})`,
-        text: `New order.\n\nName: ${q.customer.name}\nEmail: ${q.customer.email}\nPhone: ${q.customer.phone || "—"}\nSource: ${q.source}\nDelivery: ${q.fulfillment === "ship" ? "ship" : q.fulfillment === "pickup" ? "local pickup" : "—"}\n\n${itemLines(q, cur)}\n\nTotal: ${fmt(q.total_cents, cur)}${q.payment && q.payment.url ? "\nPayment link: " + q.payment.url : ""}\n\nNotes:\n${q.customer.notes || "—"}`,
+        text: `New order.\n\nName: ${q.customer.name}\nEmail: ${q.customer.email}\nPhone: ${q.customer.phone || "—"}\nSource: ${q.source}\nDelivery: ${q.fulfillment === "ship" ? "ship" : q.fulfillment === "pickup" ? "local pickup" : "—"}\n\n${itemLines(q, cur)}\n\nTotal: ${fmt(q.total_cents, cur)}\n\nNotes:\n${q.customer.notes || "—"}`,
         attachments: [attachment]
       });
       result.business = "sent";

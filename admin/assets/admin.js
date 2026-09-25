@@ -43,14 +43,14 @@
     [].forEach.call(this.children, function(x){ x.classList.toggle("active", x === b); });
     [].forEach.call(document.querySelectorAll("[data-panel]"), function(p){ p.hidden = p.dataset.panel !== b.dataset.tab; });
     if (b.dataset.tab === "quotes") loadQuotes();
-    if (b.dataset.tab === "square") { checkSquareJob(); initSquarePay(); }
+    if (b.dataset.tab === "square") checkSquareJob();
     if (b.dataset.tab === "inventory") initInventory();
   });
 
   function boot(){
     Promise.all([api("/settings"), api("/status")]).then(function(r){
       settings = r[0]; status = r[1];
-      fillSettings(); fillSmtp(); fillPricing(); renderConn(); renderLogos(); renderStorageAlert(); renderPayProblem();
+      fillSettings(); fillSmtp(); fillPricing(); renderConn(); renderLogos(); renderStorageAlert();
       startOrderWatch();
       var tab = location.hash.slice(1) === "orders" ? "quotes" : location.hash.slice(1);
       var tabBtn = tab && document.querySelector('.tabs [data-tab="' + tab.replace(/[^a-z]/g, "") + '"]');
@@ -70,7 +70,7 @@
   function squareCell(d){
     if (d.square_error) return '<span class="pill bad" title="' + esc(d.square_error) + '">Error</span>';
     if (d.square_item_id) return '<span class="pill ok" title="Last pushed ' + esc(new Date(d.square_pushed_at).toLocaleString()) + '">In Square</span>' +
-      (d.square_image_error ? ' <span class="pill warn" title="' + esc(d.square_image_error) + '">No photo</span><div class="dm pay-err">Photo: ' + esc(d.square_image_error) + '</div>'
+      (d.square_image_error ? ' <span class="pill warn" title="' + esc(d.square_image_error) + '">No photo</span><div class="dm err-note">Photo: ' + esc(d.square_image_error) + '</div>'
         : d.square_image_ok ? ' <span class="pill ok">Photo</span>' : ' <span class="pill" title="Push again to upload the photo">Photo pending</span>');
     return '<span class="pill">Not pushed</span>';
   }
@@ -144,7 +144,7 @@
   $("full-sync").addEventListener("click", function(){ runSync(true); });
 
   // ---------- pricing ----------
-  var PK = ["baseFee","perGram","perHour","markupPct","minPrice","roundTo","shipping"];
+  var PK = ["baseFee","perGram","perHour","markupPct","minPrice","roundTo"];
   function fillPricing(){ PK.forEach(function(k){ $("p-" + k).value = settings.pricing[k]; }); }
   function formPricing(){ var p = {}; PK.forEach(function(k){ p[k] = Number($("p-" + k).value) || 0; }); return p; }
   function hours(t){
@@ -312,9 +312,6 @@
   function loadQuotes(){
     api("/quotes").then(function(r){
       var list = r.data || [];
-      status.paymentProblem = r.paymentProblem; renderPayProblem();
-      $("quote-pay-error").hidden = !r.paymentError;
-      $("quote-pay-error").textContent = r.paymentError ? "Couldn\u2019t check payments with Square: " + r.paymentError : "";
       $("quote-summary").textContent = list.length ? list.length + " orders, " + list.filter(function(q){ return q.status === "new"; }).length + " new" : "No orders yet.";
       $("quote-rows").innerHTML = list.map(function(q){
         var em = q.email || {};
@@ -325,7 +322,6 @@
             (q.customer.notes ? '<div class="dm" title="' + esc(q.customer.notes) + '">“' + esc(q.customer.notes.slice(0, 60)) + (q.customer.notes.length > 60 ? "…" : "") + '”</div>' : "") + '</td>' +
           '<td class="dm" style="max-width:260px">' + q.items.map(function(i){ return esc(i.qty + "× " + i.title); }).join("<br>") + '</td>' +
           '<td><strong>' + esc(q.total) + '</strong><div class="dm">' + (q.fulfillment === "ship" ? "Ship" : q.fulfillment === "pickup" ? "Pickup" : "") + '</div></td><td>' + emailPill + '</td>' +
-          '<td>' + payCell(q) + '</td>' +
           '<td><select class="input q-status" aria-label="Status">' + ORDER_STATUSES.concat(ORDER_STATUSES.indexOf(q.status) < 0 ? [q.status] : []).map(function(s){
             return '<option' + (s === q.status ? " selected" : "") + '>' + s + '</option>'; }).join("") + '</select></td>' +
           '<td><div class="cell-actions"><a class="btn small" target="_blank" rel="noopener" href="/api/admin/quotes/' + encodeURIComponent(q.id) + '/pdf">PDF</a>' +
@@ -339,23 +335,7 @@
     api("/quotes/" + encodeURIComponent(id), { method:"POST", body:{ status: e.target.value } }).then(checkNewOrders);
   });
   var ORDER_STATUSES = ["new","printing","ready","shipped","completed","cancelled"];
-  function payCell(q){
-    var p = q.payment;
-    if (p && p.status === "paid") return '<span class="pill ok">Paid</span>' + (p.ship_to ? '<div class="dm ship-to">' + esc(p.ship_to).replace(/\n/g, "<br>") + '</div>' : '');
-    if (p && p.url) return '<span class="pill warn">Unpaid</span> <a class="dm" href="' + esc(p.url) + '" target="_blank" rel="noopener">Link</a>';
-    var btn = status.square ? '<button class="btn ghost small" data-paylink type="button">Create link</button>' : '';
-    return (p && p.error ? '<span class="pill bad">Link failed</span> ' : '<span class="muted">\u2014</span> ') + btn +
-      (p && p.error ? '<div class="dm pay-err">' + esc(p.error) + '</div>' : '');
-  }
   $("quote-rows").addEventListener("click", function(e){
-    var pb = e.target.closest("[data-paylink]");
-    if (pb) {
-      var row = pb.closest("tr"), msg = row.querySelector(".saved");
-      pb.disabled = true; msg.textContent = "Creating link…";
-      return api("/quotes/" + encodeURIComponent(row.dataset.id) + "/payment-link", { method:"POST" })
-        .then(function(){ msg.textContent = "Link created. Click Resend to email it."; setTimeout(loadQuotes, 2500); })
-        .catch(function(err){ msg.textContent = err.message; pb.disabled = false; });
-    }
     var b = e.target.closest("[data-resend]"); if (!b) return;
     var tr = b.closest("tr"), note = tr.querySelector(".saved");
     b.disabled = true; note.textContent = "Sending…";
@@ -493,77 +473,6 @@
   }
 
   // ---------- square ----------
-  var sqLocLoaded = false;
-  function renderPayProblem(){
-    var msg = status.paymentProblem || "";
-    [["pay-problem", ' <a href="#" data-goto-square>Open the Square tab</a> to fix it, then use \u201cCreate link\u201d and \u201cResend\u201d on the orders below.'], ["sq-pay-problem", ""]].forEach(function(x){
-      var el = $(x[0]); el.hidden = !msg;
-      el.innerHTML = msg ? '<strong>Customers can\u2019t pay online right now.</strong> ' + esc(msg) + x[1] : "";
-    });
-  }
-  function refreshPayProblem(){ return api("/status").then(function(s){ status = s; renderPayProblem(); }); }
-  document.addEventListener("click", function(e){
-    if (!e.target.closest("[data-goto-square]")) return;
-    e.preventDefault(); document.querySelector('[data-tab="square"]').click();
-  });
-  $("sq-pay-test").addEventListener("click", function(){
-    var b = this; b.disabled = true;
-    setStatus($("sq-pay-status"), "Asking Square for a $1 test link\u2026");
-    api("/square/test-payment-link", { method:"POST" })
-      .then(function(){ setStatus($("sq-pay-status"), "Square created a test payment link (and it was deleted again). Payments are ready" + (settings.squarePaymentLinks ? "." : " once you turn on \u201cTake payment at checkout\u201d and save."), "ok"); })
-      .catch(function(err){ setStatus($("sq-pay-status"), "Square refused: " + err.message, "bad"); })
-      .finally(function(){ b.disabled = !status.square; refreshPayProblem(); });
-  });
-  function initSquarePay(){
-    $("sq-pay-on").checked = !!settings.squarePaymentLinks;
-    $("sq-pay-on").disabled = $("sq-pay-test").disabled = !status.square;
-    renderApplePay();
-    renderPayProblem();
-    if (sqLocLoaded || !status.square) return;
-    sqLocLoaded = true;
-    api("/square/test").then(function(r){
-      $("sq-location").innerHTML = '<option value="">First active location</option>' + r.locations.map(function(l){
-        return '<option value="' + esc(l.id) + '"' + (l.id === settings.squareLocationId ? " selected" : "") + '>' + esc(l.name) + (l.status === "ACTIVE" ? "" : " (inactive)") + '</option>';
-      }).join("");
-    }).catch(function(e){ sqLocLoaded = false; setStatus($("sq-pay-status"), e.message, "bad"); });
-  }
-  // ---------- Apple Pay domain verification file ----------
-  var AP_PATH = "/.well-known/apple-developer-merchantid-domain-association";
-  function renderApplePay(){
-    $("ap-url").href = AP_PATH; $("ap-url").textContent = location.origin + AP_PATH;
-    $("ap-state").innerHTML = status.applePayFile ? '<span class="pill ok">Uploaded</span> Apple can fetch it now.' : '<span class="pill warn">Not uploaded</span>';
-    $("ap-remove").hidden = !status.applePayFile;
-  }
-  $("ap-file").addEventListener("change", function(){
-    var f = this.files[0]; this.value = ""; if (!f) return;
-    setStatus($("ap-status"), "Uploading\u2026");
-    fetch("/api/admin/apple-pay-file", { method:"POST", headers:{ "Content-Type":"application/octet-stream" }, body:f })
-      .then(function(r){ return r.json().then(function(j){ if (!r.ok) throw new Error(j.error || "Upload failed."); }); })
-      .then(function(){ status.applePayFile = true; renderApplePay(); setStatus($("ap-status"), "Saved. Now click Verify in Square or Apple.", "ok"); })
-      .catch(function(err){ setStatus($("ap-status"), err.message, "bad"); });
-  });
-  $("ap-remove").addEventListener("click", function(){
-    if (!confirm("Remove the Apple Pay verification file?")) return;
-    api("/apple-pay-file", { method:"DELETE" })
-      .then(function(){ status.applePayFile = false; renderApplePay(); setStatus($("ap-status"), "Removed.", "ok"); })
-      .catch(function(err){ setStatus($("ap-status"), err.message, "bad"); });
-  });
-
-  // both save as soon as they change, like the other switches in admin
-  function saveSquarePay(body, revert){
-    setStatus($("sq-pay-status"), "Saving\u2026");
-    api("/settings", { method:"POST", body: body })
-      .then(function(s){ settings = s; setStatus($("sq-pay-status"), "Saved.", "ok"); return refreshPayProblem(); })
-      .catch(function(err){ revert(); setStatus($("sq-pay-status"), "Not saved: " + err.message, "bad"); });
-  }
-  $("sq-pay-on").addEventListener("change", function(){
-    var box = this;
-    saveSquarePay({ squarePaymentLinks: box.checked }, function(){ box.checked = !box.checked; });
-  });
-  $("sq-location").addEventListener("change", function(){
-    var sel = this;
-    saveSquarePay({ squareLocationId: sel.value }, function(){ sel.value = settings.squareLocationId || ""; });
-  });
   $("sq-test").addEventListener("click", function(){
     setStatus($("sq-locations"), "Connecting to Square…");
     api("/square/test").then(function(r){

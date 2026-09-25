@@ -11,8 +11,6 @@ const { buildQuotePdf } = require("../pdf");
 const { checkPassword, requireAdmin } = require("../auth");
 const rateLimit = require("../rateLimit");
 const logo = require("../logo");
-const payments = require("../payments");
-const applePay = require("../applePay");
 
 const router = express.Router();
 
@@ -39,8 +37,6 @@ router.get("/status", (req, res) => {
     square: square.configured(),
     squareEnv: square.isSandbox() ? "sandbox" : "production",
     spoolman: spoolman.configured(),
-    paymentProblem: payments.problem(),
-    applePayFile: applePay.exists(),
     storageError: db.writeError()
   });
 });
@@ -146,8 +142,6 @@ router.post("/settings", (req, res) => {
   if (b.kioskIdleSeconds !== undefined) u.kioskIdleSeconds = Math.min(3600, Math.max(15, parseInt(b.kioskIdleSeconds, 10) || 90));
   if (b.squareOverwritePrices !== undefined) u.squareOverwritePrices = !!b.squareOverwritePrices;
   if (b.logoShowName !== undefined) u.logoShowName = !!b.logoShowName;
-  if (b.squarePaymentLinks !== undefined) u.squarePaymentLinks = !!b.squarePaymentLinks;
-  if (b.squareLocationId !== undefined) u.squareLocationId = String(b.squareLocationId || "").trim().slice(0, 64);
   if (b.spoolmanLowStockGrams !== undefined) {
     const n = Number(b.spoolmanLowStockGrams);
     if (!Number.isFinite(n) || n < 0) return res.status(400).json({ error: "Low-stock threshold must be 0 or more." });
@@ -160,7 +154,7 @@ router.post("/settings", (req, res) => {
   }
   if (b.pricing) {
     u.pricing = {};
-    for (const k of ["baseFee", "perGram", "perHour", "markupPct", "minPrice", "roundTo", "shipping"]) {
+    for (const k of ["baseFee", "perGram", "perHour", "markupPct", "minPrice", "roundTo"]) {
       if (b.pricing[k] === undefined) continue;
       const n = Number(b.pricing[k]);
       if (!Number.isFinite(n) || n < 0) return res.status(400).json({ error: `Pricing value "${k}" must be 0 or more.` });
@@ -171,15 +165,6 @@ router.post("/settings", (req, res) => {
 });
 
 // ---------- logo ----------
-router.post("/apple-pay-file", express.raw({ type: () => true, limit: "200kb" }), (req, res) => {
-  try { applePay.save(req.body); res.json({ ok: true }); }
-  catch (e) {
-    if (e.code === "EACCES" || e.code === "EPERM") return res.status(500).json({ error: "The app can't write to its data folder. See the warning at the top of the admin panel." });
-    res.status(400).json({ error: e.message });
-  }
-});
-router.delete("/apple-pay-file", (req, res) => { applePay.remove(); res.json({ ok: true }); });
-
 router.post("/logo/:variant", express.raw({ type: () => true, limit: "2mb" }), (req, res) => {
   try {
     if (!Buffer.isBuffer(req.body) || !req.body.length) return res.status(400).json({ error: "Choose an image file." });
@@ -247,15 +232,9 @@ router.get("/n3d/check", async (req, res) => {
 });
 
 // ---------- quotes ----------
-router.get("/quotes", async (req, res) => {
-  // check Square for newly paid links; a Square outage shouldn't hide the list
-  let paymentError = null;
-  if (square.configured()) {
-    try { await payments.refreshStatuses(db.allQuotes().slice(0, 300)); }
-    catch (e) { paymentError = e.message; }
-  }
+router.get("/quotes", (req, res) => {
   const cur = db.getSettings().currency;
-  res.json({ paymentError, paymentProblem: payments.problem(), data: db.allQuotes().map(q => Object.assign({}, q, { total: fmt(q.total_cents, cur), token: undefined })) });
+  res.json({ data: db.allQuotes().map(q => Object.assign({}, q, { total: fmt(q.total_cents, cur), token: undefined })) });
 });
 
 // Failures from Square/N3D/Spoolman are answered with 422, not 502: proxies
@@ -273,16 +252,6 @@ router.get("/orders/new", (req, res) => {
       fulfillment: q.fulfillment || null, created_at: q.created_at
     }))
   });
-});
-
-router.post("/quotes/:id/payment-link", async (req, res) => {
-  const q = db.getQuote(req.params.id);
-  if (!q) return res.status(404).json({ error: "not_found" });
-  if (!square.configured()) return res.status(400).json({ error: "SQUARE_ACCESS_TOKEN isn't set." });
-  if (q.payment && q.payment.url) return res.json({ ok: true, payment: q.payment });
-  const saved = await payments.attachLink(q, req);
-  if (saved.payment.error) return res.status(422).json({ error: saved.payment.error });
-  res.json({ ok: true, payment: saved.payment });
 });
 
 router.post("/quotes/:id", (req, res) => {
@@ -317,13 +286,12 @@ function csvCell(v) {
   return /[",\n]/.test(safe) ? '"' + safe.replace(/"/g, '""') + '"' : safe;
 }
 router.get("/quotes.csv", (req, res) => {
-  const rows = [["id", "created_at", "status", "source", "name", "email", "phone", "items", "total", "notes", "customer_email", "business_email", "delivery", "shipping", "payment", "ship_to"]];
+  const rows = [["id", "created_at", "status", "source", "name", "email", "phone", "items", "total", "notes", "customer_email", "business_email", "delivery", "shipping"]];
   for (const q of db.allQuotes()) {
     rows.push([q.id, q.created_at, q.status, q.source, q.customer.name, q.customer.email, q.customer.phone,
       q.items.map(i => `${i.qty}x ${i.title}`).join("; "), (q.total_cents / 100).toFixed(2), q.customer.notes,
       q.email && q.email.customer, q.email && q.email.business,
-      q.fulfillment || "", q.shipping_cents != null ? (q.shipping_cents / 100).toFixed(2) : "",
-      q.payment ? (q.payment.status || "error") : "", q.payment && q.payment.ship_to]);
+      q.fulfillment || "", q.shipping_cents != null ? (q.shipping_cents / 100).toFixed(2) : ""]);
   }
   res.setHeader("Content-Type", "text/csv");
   res.setHeader("Content-Disposition", 'attachment; filename="quotes.csv"');
@@ -438,12 +406,6 @@ router.post("/square/duplicates/delete", async (req, res) => {
 
 router.post("/square/push/:slug", async (req, res) => {
   try { res.json({ ok: true, data: toAdmin(await pushOne(req.params.slug), db.getSettings()) }); }
-  catch (e) { res.status(422).json({ error: e.message }); }
-});
-
-router.post("/square/test-payment-link", async (req, res) => {
-  if (!square.configured()) return res.status(400).json({ error: "SQUARE_ACCESS_TOKEN isn't set." });
-  try { const l = await payments.testLink(req); res.json({ ok: true, location_id: l.location_id }); }
   catch (e) { res.status(422).json({ error: e.message }); }
 });
 
