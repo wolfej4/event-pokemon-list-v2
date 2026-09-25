@@ -126,13 +126,17 @@ body.kiosk .site-footer{ display:none; }
 
 /* evolution family: full tree in the design view */
 .family h3{ font-size:.78rem; text-transform:uppercase; letter-spacing:.06em; color:var(--faint); margin:0 0 8px; }
-.fam{ display:flex; align-items:center; gap:8px; }
+/* every member gets the same box, whatever its stage or name length */
+.fam{ --mon:78px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .fam .arr{ color:var(--faint); font-size:1.1rem; flex:none; }
-.fam .stage{ display:grid; grid-template-columns:repeat(var(--cols), minmax(0, 1fr)); gap:4px; min-width:0; }
-.fam .stage:last-child{ flex:1; }
-.fam .mon{ display:flex; flex-direction:column; align-items:center; gap:2px; min-width:0; padding:4px 2px; border-radius:10px;
+.fam .stage{ display:grid; grid-template-columns:repeat(var(--cols), var(--mon)); gap:4px; }
+@media (max-width:520px){
+  .fam{ --mon:66px; }
+  .fam .stage{ grid-template-columns:repeat(var(--cols-narrow), var(--mon)); }
+}
+.fam .mon{ display:flex; flex-direction:column; align-items:center; gap:2px; width:var(--mon); min-width:0; padding:4px 2px; border-radius:10px;
   font:inherit; font-size:.74rem; color:var(--ink); background:none; border:1px solid var(--line); cursor:pointer; }
 .fam .mon span{ max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.fam .mon img{ width:48px; height:48px; max-width:100%; object-fit:contain; }
+.fam .mon img{ width:52px; height:52px; max-width:100%; object-fit:contain; }
 .fam button.mon:hover{ border-color:var(--accent); }
 .fam .mon.me{ background:var(--accent-soft); color:var(--accent); font-weight:700; border-color:transparent; cursor:default; }

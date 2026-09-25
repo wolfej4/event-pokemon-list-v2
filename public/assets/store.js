@@ -121,7 +121,10 @@
   // d.family is a forest of { slug, to: [...] } holding only the family members
   // this catalog has designs for (see familyFor in src/routes/public.js).
   function spriteOf(slug){ var d = bySlug[slug]; return d ? safeSrc(d.sprite || d.image_url) : ""; }
-  function nameOf(slug){ var d = bySlug[slug]; return d ? ((d.pokemon && d.pokemon.name) || d.title) : ""; }
+  function nameOf(slug){
+    var d = bySlug[slug], n = d ? ((d.pokemon && d.pokemon.name) || d.title) : "";
+    return n.replace(/(^|[\s-])([a-z])/g, function(m, sep, c){ return sep + c.toUpperCase(); }); // N3D sends "squirtle"
+  }
   function familyPath(nodes, slug){ // root ... the node for slug
     for (var i = 0; i < nodes.length; i++){
       if (nodes[i].slug === slug) return [nodes[i]];
@@ -163,7 +166,7 @@
       nodes.forEach(function(n){ (cols[depth] = cols[depth] || []).push(n.slug); walk(n.to, depth + 1); });
     })(d.family, 0);
     return '<div class="family"><h3>Evolution family</h3><div class="fam">' + cols.map(function(col){
-      return '<div class="stage" style="--cols:' + Math.min(col.length, 4) + '">' + col.map(function(slug){
+      return '<div class="stage" style="--cols:' + Math.min(col.length, 4) + ';--cols-narrow:' + Math.min(col.length, 3) + '">' + col.map(function(slug){
         var inner = '<img alt="" src="' + esc(spriteOf(slug)) + '"><span>' + esc(nameOf(slug)) + '</span>';
         return slug === d.slug ? '<span class="mon me" aria-current="true">' + inner + '</span>'
           : '<button type="button" class="mon" data-goto="' + esc(slug) + '">' + inner + '</button>';
