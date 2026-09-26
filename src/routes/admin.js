@@ -12,6 +12,7 @@ const { checkPassword, requireAdmin } = require("../auth");
 const rateLimit = require("../rateLimit");
 const logo = require("../logo");
 const enrich = require("../enrich");
+const catalog = require("../squareCatalog");
 
 const router = express.Router();
 
@@ -47,7 +48,7 @@ router.get("/status", (req, res) => {
 // Square IDs are kept per environment so testing in sandbox never overwrites
 // (and later duplicates) the items in the live catalog. Designs pushed before
 // this existed only have top-level IDs, and those were always production.
-const SQ_FIELDS = ["square_item_id", "square_variation_id", "square_image_src", "square_image_ok", "square_pushed_at"];
+const SQ_FIELDS = ["square_item_id", "square_variation_id", "square_variation_id_shiny", "square_image_src", "square_image_ok", "square_pushed_at"];
 function squareIdsFor(d, env) {
   if (d.square_by_env) return d.square_by_env[env] || {};
   if (env === "production" && d.square_item_id) { const o = {}; SQ_FIELDS.forEach(k => { o[k] = d[k]; }); return o; }
@@ -156,7 +157,7 @@ router.post("/settings", (req, res) => {
   }
   if (b.pricing) {
     u.pricing = {};
-    for (const k of ["baseFee", "perGram", "perHour", "markupPct", "minPrice", "roundTo"]) {
+    for (const k of ["baseFee", "perGram", "perHour", "markupPct", "minPrice", "roundTo", "shinyUpcharge"]) {
       if (b.pricing[k] === undefined) continue;
       const n = Number(b.pricing[k]);
       if (!Number.isFinite(n) || n < 0) return res.status(400).json({ error: `Pricing value "${k}" must be 0 or more.` });
@@ -351,10 +352,29 @@ async function pushOne(slug) {
     return db.upsertDesign(slug, Object.assign({}, next, { square_by_env: byEnv }, extra));
   };
 
+  const priceCents = unitCents(d, s.pricing);
+  const dex = d.pokemon && d.pokemon.pokedex_number;
+  const sku = dex ? String(dex) : null;
+  // every Pokémon design also offers a Shiny variation at an upcharge; plain
+  // balls and anything without a Pokémon don't get one
+  const shinyPriceCents = d.pokemon ? priceCents + Math.round((Number(s.pricing.shinyUpcharge) || 0) * 100) : null;
+
+  let catFields = {}, customAttrs = {};
+  try {
+    catFields = await catalog.categoriesFieldsFor(d);
+    customAttrs = await catalog.customAttributesFor(d);
+  } catch (e) {
+    // a hiccup creating a category shouldn't block the item's price and photo from updating
+    console.error("[square] categories/attributes failed for " + slug + ":", e.message);
+  }
+
   let item;
   try {
-    item = await square.upsertItem(Object.assign({}, d, { square_item_id: ids.square_item_id || null }),
-      unitCents(d, s.pricing), { currency: s.currency, overwritePrice: s.squareOverwritePrices });
+    item = await square.upsertItem(Object.assign({}, d, { square_item_id: ids.square_item_id || null }), priceCents, {
+      currency: s.currency, overwritePrice: s.squareOverwritePrices,
+      categories: catFields.categories, reportingCategory: catFields.reporting_category,
+      customAttributeValues: customAttrs, shinyPriceCents, sku
+    });
   } catch (e) {
     console.error("[square] push failed for " + slug + ":", e.message);
     db.upsertDesign(slug, { square_error: e.message });

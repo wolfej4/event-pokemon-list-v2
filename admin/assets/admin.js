@@ -144,7 +144,7 @@
   $("full-sync").addEventListener("click", function(){ runSync(true); });
 
   // ---------- pricing ----------
-  var PK = ["baseFee","perGram","perHour","markupPct","minPrice","roundTo"];
+  var PK = ["baseFee","perGram","perHour","markupPct","minPrice","roundTo","shinyUpcharge"];
   function fillPricing(){ PK.forEach(function(k){ $("p-" + k).value = settings.pricing[k]; }); }
   function formPricing(){ var p = {}; PK.forEach(function(k){ p[k] = Number($("p-" + k).value) || 0; }); return p; }
   function hours(t){

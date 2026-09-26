@@ -46,6 +46,81 @@ async function call(method, path, body, attempt = 0) {
   return json;
 }
 
+// ---------- categories ----------
+async function listCategories() {
+  const map = {};
+  let cursor = null;
+  do {
+    const j = await call("GET", "/v2/catalog/list?types=CATEGORY" + (cursor ? "&cursor=" + encodeURIComponent(cursor) : ""));
+    for (const o of j.objects || []) if (!o.is_deleted && o.category_data && o.category_data.name) map[o.category_data.name] = o.id;
+    cursor = j.cursor;
+  } while (cursor);
+  return map;
+}
+
+// Creates whichever of these category names Square doesn't already have
+// (checked by name against the real catalog first, so re-running never makes
+// a duplicate), and returns name -> id for all of them. category_type must be
+// REGULAR_CATEGORY for an item to carry more than one category.
+async function ensureCategories(names) {
+  const unique = [...new Set(names.filter(Boolean))];
+  if (!unique.length) return {};
+  const existing = await listCategories();
+  const missing = unique.filter(n => !existing[n]);
+  if (missing.length) {
+    const objects = missing.map((name, i) => ({
+      type: "CATEGORY", id: "#cat" + i,
+      category_data: { name: name.slice(0, 255), category_type: "REGULAR_CATEGORY" }
+    }));
+    const res = await call("POST", "/v2/catalog/batch-upsert", { idempotency_key: crypto.randomUUID(), batches: [{ objects }] });
+    for (const obj of res.objects || []) {
+      if (obj.category_data && obj.category_data.name) existing[obj.category_data.name] = obj.id;
+    }
+  }
+  const out = {};
+  unique.forEach(n => { if (existing[n]) out[n] = existing[n]; });
+  return out;
+}
+
+// ---------- custom attributes (Pokédex #, weight) ----------
+const ATTR_DEFS = [
+  { key: "pokedex_number", name: "Pokédex #", numberConfig: { precision: 0 } },
+  { key: "weight_grams", name: "Weight (g)", numberConfig: { precision: 1 } }
+];
+// Creates the two custom attribute definitions this app uses to show
+// Pokédex number and weight as their own fields in Square (not just in the
+// description), checked by key against Square's real list first.
+// Returns { pokedex_number: {id, key}, weight_grams: {id, key} }.
+async function ensureCustomAttributeDefinitions() {
+  const j = await call("GET", "/v2/catalog/list?types=CUSTOM_ATTRIBUTE_DEFINITION");
+  const existing = {};
+  for (const o of j.objects || []) {
+    const k = o.custom_attribute_definition_data && o.custom_attribute_definition_data.key;
+    if (!o.is_deleted && k) existing[k] = o.id;
+  }
+  const out = {};
+  for (const def of ATTR_DEFS) {
+    let id = existing[def.key];
+    if (!id) {
+      const res = await call("POST", "/v2/catalog/object", {
+        idempotency_key: crypto.randomUUID(),
+        object: {
+          type: "CUSTOM_ATTRIBUTE_DEFINITION", id: "#cad_" + def.key,
+          custom_attribute_definition_data: {
+            type: "NUMBER", name: def.name, key: def.key,
+            allowed_object_types: ["ITEM"],
+            seller_visibility: "SELLER_VISIBILITY_READ_WRITE_VALUES",
+            number_config: def.numberConfig
+          }
+        }
+      });
+      id = res.catalog_object.id;
+    }
+    out[def.key] = { id, key: def.key };
+  }
+  return out;
+}
+
 async function testConnection() {
   const j = await call("GET", "/v2/locations");
   return (j.locations || []).map(l => ({ id: l.id, name: l.name, status: l.status, currency: l.currency }));
@@ -125,10 +200,21 @@ async function uploadImage(itemId, imageUrl, name) {
 }
 
 /**
- * Create or update one design's item in Square (without the photo; see uploadImage).
- * Returns { square_item_id, square_variation_id, square_pushed_at, created }.
+ * Create or update one design's item in Square (without the photo; see
+ * uploadImage). `opts.categories`/`reportingCategory` come from
+ * squareCatalog.categoriesFieldsFor; `customAttributeValues` from
+ * squareCatalog.customAttributesFor. `shinyPriceCents` adds/updates a
+ * second "Shiny" variation (null removes it, e.g. a design that no longer
+ * depicts a Pokémon). `sku` goes on the Regular variation (and "<sku>-SHINY"
+ * on Shiny); falsy clears it.
+ * Returns { square_item_id, square_variation_id, square_variation_id_shiny,
+ * square_pushed_at, created }.
  */
-async function upsertItem(d, priceCents, { currency = "USD", overwritePrice = true } = {}) {
+async function upsertItem(d, priceCents, opts = {}) {
+  const {
+    currency = "USD", overwritePrice = true, categories, reportingCategory,
+    customAttributeValues, shinyPriceCents = null, sku = null
+  } = opts;
   const name = String(d.title || d.slug).slice(0, 255);
   let existing = null;
 
@@ -148,34 +234,53 @@ async function upsertItem(d, priceCents, { currency = "USD", overwritePrice = tr
     object.item_data.description = describe(d);
     delete object.item_data.description_html;
     delete object.item_data.description_plaintext;
-    const vars = object.item_data.variations || [];
-    if (!vars.length) {
-      vars.push({ type: "ITEM_VARIATION", id: "#var", item_variation_data: { item_id: object.id, name: "Regular" } });
-      setPrice(vars[0].item_variation_data, priceCents, currency);
-    } else if (overwritePrice) {
-      setPrice(vars[0].item_variation_data, priceCents, currency);
-    }
-    object.item_data.variations = vars;
   } else {
-    const varData = { item_id: "#item", name: "Regular" };
-    setPrice(varData, priceCents, currency);
     object = {
-      type: "ITEM",
-      id: "#item",
-      present_at_all_locations: true,
-      item_data: {
-        name,
-        description: describe(d),
-        variations: [{ type: "ITEM_VARIATION", id: "#var", present_at_all_locations: true, item_variation_data: varData }]
-      }
+      type: "ITEM", id: "#item", present_at_all_locations: true,
+      item_data: { name, description: describe(d), variations: [] }
     };
   }
+  object.item_data.categories = categories || [];
+  if (reportingCategory) object.item_data.reporting_category = reportingCategory;
+  else delete object.item_data.reporting_category;
+  object.custom_attribute_values = customAttributeValues || {};
+
+  const itemRef = existing ? object.id : "#item"; // new variations need the real item id once one exists
+  const isShiny = (v) => /shiny/i.test((v.item_variation_data || {}).name || "");
+  const vars = object.item_data.variations || [];
+
+  let reg = vars.find(v => !isShiny(v));
+  const regIsNew = !reg;
+  if (regIsNew) {
+    reg = { type: "ITEM_VARIATION", id: "#var", present_at_all_locations: true, item_variation_data: { item_id: itemRef, name: "Regular" } };
+    vars.unshift(reg);
+  }
+  if (regIsNew || overwritePrice) setPrice(reg.item_variation_data, priceCents, currency);
+  if (sku) reg.item_variation_data.sku = sku; else delete reg.item_variation_data.sku;
+
+  let shiny = vars.find(isShiny);
+  if (shinyPriceCents != null) {
+    const shinyIsNew = !shiny;
+    if (shinyIsNew) {
+      shiny = { type: "ITEM_VARIATION", id: "#varshiny", present_at_all_locations: true, item_variation_data: { item_id: itemRef, name: "Shiny" } };
+      vars.push(shiny);
+    }
+    if (shinyIsNew || overwritePrice) setPrice(shiny.item_variation_data, shinyPriceCents, currency);
+    if (sku) shiny.item_variation_data.sku = sku + "-SHINY"; else delete shiny.item_variation_data.sku;
+  } else if (shiny) {
+    vars.splice(vars.indexOf(shiny), 1); // no longer offered (e.g. design isn't a Pokémon anymore)
+  }
+  object.item_data.variations = vars;
 
   const res = await call("POST", "/v2/catalog/object", { idempotency_key: crypto.randomUUID(), object });
   const saved = res.catalog_object;
+  const savedVars = saved.item_data.variations || [];
+  const savedReg = savedVars.find(v => !isShiny(v)) || savedVars[0];
+  const savedShiny = savedVars.find(isShiny);
   return {
     square_item_id: saved.id,
-    square_variation_id: (saved.item_data.variations || [])[0] && saved.item_data.variations[0].id,
+    square_variation_id: savedReg && savedReg.id,
+    square_variation_id_shiny: savedShiny ? savedShiny.id : null,
     square_pushed_at: new Date().toISOString(),
     created: !existing
   };
@@ -199,4 +304,7 @@ async function deleteItems(ids) {
   for (let i = 0; i < ids.length; i += 200) await call("POST", "/v2/catalog/batch-delete", { object_ids: ids.slice(i, i + 200) });
 }
 
-module.exports = { envName, isSandbox, configured, testConnection, upsertItem, uploadImage, listAppItems, deleteItems, describe };
+module.exports = {
+  envName, isSandbox, configured, testConnection, upsertItem, uploadImage, listAppItems, deleteItems, describe,
+  listCategories, ensureCategories, ensureCustomAttributeDefinitions
+};
