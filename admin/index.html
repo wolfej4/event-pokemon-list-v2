@@ -92,6 +92,7 @@
             <div class="field"><label for="p-markupPct">Markup (%)</label><input id="p-markupPct" type="number" step="1" min="0"></div>
             <div class="field"><label for="p-minPrice">Minimum price ($)</label><input id="p-minPrice" type="number" step="0.01" min="0"></div>
             <div class="field"><label for="p-roundTo">Round up to nearest ($, 0 = off)</label><input id="p-roundTo" type="number" step="0.25" min="0"></div>
+            <div class="field"><label for="p-shinyUpcharge">Shiny version upcharge ($)</label><input id="p-shinyUpcharge" type="number" step="0.50" min="0"></div>
           </div>
           <button class="btn primary" type="submit">Save pricing</button>
           <span class="status inline" id="pricing-status"></span>
@@ -121,7 +122,10 @@
     <!-- square -->
     <section data-panel="square" hidden>
       <div class="head"><div><h2>Square</h2>
-        <p class="sub">Pushes each design to your Square catalog with its photo, description, and price. Designs without a price go up as variable-price items.</p></div></div>
+        <p class="sub">Pushes each design to your Square catalog with its photo, description, and price. Pokémon designs also get a category for each type
+          (Fire, Water, ...) and for their region (Kanto, Johto, ...), a Shiny variation at the upcharge set on the Pricing tab, the Pokédex number as
+          the item's SKU, and Pokédex number/weight as item details in Square. Plain balls (Poké Ball, Great Ball, ...) go into their own "Poké Balls"
+          category. Categories and item details are created in Square the first time they're needed. Designs without a price go up as variable-price items.</p></div></div>
       <div class="split">
         <div class="panel">
           <h3>Connection</h3>

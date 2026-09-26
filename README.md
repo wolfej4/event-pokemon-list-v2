@@ -39,6 +39,24 @@ panel for pricing, N3D sync, and pushing to Square. Light and dark mode on both.
   instead of duplicating it and only re-uploads the photo if N3D changed it.
   Turn off "Update prices in Square when re-pushing" if you'd rather manage
   prices in Square after the first push.
+  Pokémon designs also get pushed with:
+  - a Square category for each type (Fire, Water, ...) and one for their
+    region (Kanto, Johto, Hoenn, Sinnoh, Unova, Kalos, Alola, Galar, Paldea
+    — worked out from the Pokédex number; a regional form keeps the number
+    of the species it's based on, so it lands under that region, not its own);
+  - a second "Shiny" item variation, priced at the design's price plus the
+    "Shiny version upcharge" set on the Pricing tab;
+  - the Pokédex number as the item's SKU (and `<number>-SHINY` on the Shiny
+    variation);
+  - the Pokédex number and weight as Square item details (custom attributes),
+    in addition to appearing in the description text.
+
+  Plain balls (Poké Ball, Great Ball, ...) go into their own "Poké Balls"
+  category instead, with no Shiny variation or SKU. Categories and the two
+  custom attribute definitions are created in Square the first time they're
+  needed and reused after that (checked against Square's real catalog, so
+  nothing is duplicated by a restart or switching between sandbox and
+  production).
 - **Settings:** business name, tagline, your order email, phone, PDF fine print,
   kiosk timeout, and connection tests.
 - **Inventory:** if `SPOOLMAN_URL` is set, compares the filament colors your designs

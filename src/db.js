@@ -21,7 +21,8 @@ const DEFAULT_SETTINGS = {
     perHour: 1.50,        // $ per hour of print time
     markupPct: 0,         // % added on top
     minPrice: 5.00,       // floor per item
-    roundTo: 1.00         // round up to nearest $X (0 = no rounding)
+    roundTo: 1.00,        // round up to nearest $X (0 = no rounding)
+    shinyUpcharge: 5.00    // $ added on top for the Shiny variation pushed to Square
   },
   squareOverwritePrices: true, // re-push replaces the price in Square
   spoolmanLowStockGrams: 250,  // flag a color as low when matched stock falls below this
