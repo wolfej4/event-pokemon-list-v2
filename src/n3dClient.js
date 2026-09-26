@@ -1,10 +1,19 @@
 "use strict";
 const BASE = process.env.N3D_API_BASE || "https://www.n3dmelbourne.com/api/v1";
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+const db = require("./db");
 
+// The key saved in admin wins; otherwise fall back to N3D_API_KEY.
+function config() {
+  const saved = db.getSettings().n3dApiKey;
+  if (saved) return { key: saved, source: "app" };
+  return { key: process.env.N3D_API_KEY || "", source: "env" };
+}
+function configured() { return !!config().key; }
 function key() {
-  if (!process.env.N3D_API_KEY) throw new Error("N3D_API_KEY is not set");
-  return process.env.N3D_API_KEY;
+  const k = config().key;
+  if (!k) throw new Error("The N3D API key isn't set. Add it in admin \u2192 Settings, or set N3D_API_KEY.");
+  return k;
 }
 
 async function request(path) {
@@ -50,4 +59,4 @@ async function syncCatalog({ since, onPage } = {}) {
   return { cursor, total };
 }
 
-module.exports = { checkKey, syncCatalog };
+module.exports = { checkKey, syncCatalog, configured, config };

@@ -33,10 +33,12 @@ router.use(requireAdmin);
 // ---------- status ----------
 router.get("/status", (req, res) => {
   res.json({
-    n3dKey: !!process.env.N3D_API_KEY,
+    n3dKey: n3d.configured(),
+    n3dKeySource: n3d.config().source,
     smtp: mailer.configured(),
     smtpSource: mailer.config().source,
     square: square.configured(),
+    squareTokenSource: square.config().source,
     squareEnv: square.isSandbox() ? "sandbox" : "production",
     spoolman: spoolman.configured(),
     storageError: db.writeError(),
@@ -114,7 +116,12 @@ router.post("/designs-bulk", (req, res) => {
 // never send the saved SMTP password back to the browser
 function publicSettings(s) {
   const smtp = s.smtp || {};
-  return Object.assign({}, s, { smtp: Object.assign({}, smtp, { pass: undefined, passSet: !!smtp.pass }) });
+  // API keys are never sent back to the browser once saved — just whether one is set
+  return Object.assign({}, s, {
+    smtp: Object.assign({}, smtp, { pass: undefined, passSet: !!smtp.pass }),
+    n3dApiKey: undefined, n3dApiKeySet: !!s.n3dApiKey,
+    squareAccessToken: undefined, squareAccessTokenSet: !!s.squareAccessToken
+  });
 }
 router.get("/settings", (req, res) => res.json(publicSettings(db.getSettings())));
 
@@ -231,6 +238,14 @@ router.post("/sync", async (req, res) => {
   }
 });
 
+router.post("/n3d-key", (req, res) => {
+  const b = req.body || {};
+  if (b.clear) return res.json(publicSettings(db.updateSettings({ n3dApiKey: "" })));
+  const v = String(b.key || "").trim().slice(0, 200);
+  if (!v) return res.status(400).json({ error: "Enter your N3D API key." });
+  res.json(publicSettings(db.updateSettings({ n3dApiKey: v })));
+});
+
 router.get("/n3d/check", async (req, res) => {
   try { res.json({ ok: true, info: await n3d.checkKey() }); }
   catch (e) { res.status(422).json({ ok: false, error: e.message }); }
@@ -330,6 +345,14 @@ router.post("/spoolman/check", async (req, res) => {
 router.get("/spoolman/report", (req, res) => res.json({ report: lastInventoryReport }));
 
 // ---------- Square ----------
+router.post("/square-token", (req, res) => {
+  const b = req.body || {};
+  if (b.clear) return res.json(publicSettings(db.updateSettings({ squareAccessToken: "" })));
+  const v = String(b.token || "").trim().slice(0, 200);
+  if (!v) return res.status(400).json({ error: "Enter your Square access token." });
+  res.json(publicSettings(db.updateSettings({ squareAccessToken: v })));
+});
+
 router.get("/square/test", async (req, res) => {
   try { res.json({ ok: true, locations: await square.testConnection() }); }
   catch (e) { res.status(422).json({ ok: false, error: e.message }); }
