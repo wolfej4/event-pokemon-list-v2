@@ -78,10 +78,10 @@ timeout. `/?kiosk=0` turns it off.
 1. Push this folder to a Git repo (recommended) or upload it to the Docker host.
 2. Portainer → Stacks → Add stack → Repository (or Upload) with `docker-compose.yml`.
 3. Add the environment variables from `.env.example`. At minimum:
-   `N3D_API_KEY`, `ADMIN_PASSWORD`, and `SESSION_SECRET`. Email can be set with the
-   `SMTP_*` values or later in the admin Settings tab.
-   Add `SQUARE_ACCESS_TOKEN` for Square (try `SQUARE_ENV=sandbox` with a sandbox
-   token first).
+   `ADMIN_PASSWORD` and `SESSION_SECRET`. `N3D_API_KEY` and `SQUARE_ACCESS_TOKEN`
+   can go here too, or be left out and pasted into admin instead (see below) —
+   either way, try `SQUARE_ENV=sandbox` with a sandbox token first. Email can be
+   set with the `SMTP_*` values or later in the admin Settings tab.
 4. Deploy, open `http://<host>:8090/admin`, log in, and click **Sync from N3D**.
 5. Set your business email in Settings so you get a copy of each order.
 
@@ -113,6 +113,14 @@ Behind HTTPS (Nginx Proxy Manager, Traefik, Cloudflare Tunnel), set
 - Email settings saved in admin → Settings → Email (SMTP) replace the `SMTP_*`
   environment variables, take effect immediately, and are stored (password
   included) in `db.json`. Click **Use environment variables instead** to go back.
+- The N3D API key (admin → Settings) and Square access token (admin → Square)
+  work the same way: saving one there replaces `N3D_API_KEY` /
+  `SQUARE_ACCESS_TOKEN`, takes effect immediately, and is stored in `db.json`,
+  so it survives an image update or redeploy even on hosts that don't reliably
+  keep environment variables across one (some Docker Compose managers have this
+  problem). Click **Use environment variable instead** to go back to the
+  environment variable. `SQUARE_ENV`/`SQUARE_ENVIRONMENT` (sandbox vs.
+  production) is still only an environment variable.
 - Square token scopes: `ITEMS_READ`, `ITEMS_WRITE`, and `MERCHANT_PROFILE_READ`
   (for the connection test).
 - Admin logins are in memory, so a container restart logs you out. Nothing else is lost.

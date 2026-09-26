@@ -50,7 +50,7 @@
   function boot(){
     Promise.all([api("/settings"), api("/status")]).then(function(r){
       settings = r[0]; status = r[1];
-      fillSettings(); fillSmtp(); fillPricing(); renderConn(); renderLogos(); renderStorageAlert();
+      fillSettings(); fillSmtp(); fillN3dKey(); fillSquareToken(); fillPricing(); renderConn(); renderLogos(); renderStorageAlert();
       startOrderWatch();
       var tab = location.hash.slice(1) === "orders" ? "quotes" : location.hash.slice(1);
       var tabBtn = tab && document.querySelector('.tabs [data-tab="' + tab.replace(/[^a-z]/g, "") + '"]');
@@ -199,20 +199,69 @@
     $("conn-list").innerHTML = rows.map(function(r){
       return '<li><span>' + esc(r[0]) + '</span>' + (r[1] ? '<span class="pill ok">Set</span>' : '<span class="pill warn">Not set</span>') + '</li>';
     }).join("");
-    $("sq-conn").textContent = status.square ? "Access token is set (" + status.squareEnv + ")." : "SQUARE_ACCESS_TOKEN isn't set. Add it to the stack's environment variables and redeploy.";
+    $("sq-conn").textContent = status.square ? "Access token is set (" + status.squareEnv + ")." : "No Square access token set. Add one below, or set SQUARE_ACCESS_TOKEN and redeploy.";
     $("sq-push-all").disabled = $("sq-test").disabled = !status.square;
   }
-  $("n3d-test").addEventListener("click", function(){
-    setStatus($("conn-status"), "Checking N3D key…");
-    api("/n3d/check").then(function(){ setStatus($("conn-status"), "N3D key works.", "ok"); })
-      .catch(function(e){ setStatus($("conn-status"), e.message, "bad"); });
-  });
   function testSmtp(el){
     setStatus(el, "Connecting to the mail server…");
     api("/smtp/test", { method:"POST" }).then(function(){ setStatus(el, "Mail server accepted the login.", "ok"); })
       .catch(function(e){ setStatus(el, e.message, "bad"); });
   }
-  $("smtp-test").addEventListener("click", function(){ testSmtp($("conn-status")); });
+
+  // ---------- N3D API key ----------
+  function fillN3dKey(){
+    var saved = !!settings.n3dApiKeySet;
+    $("n3d-key").value = "";
+    $("n3d-key").placeholder = saved ? "Saved (leave blank to keep)" : "";
+    $("n3d-clear").hidden = !saved;
+    $("n3d-source").textContent = saved ? "Using the key below."
+      : status.n3dKey ? "Currently using the N3D_API_KEY environment variable. Save a key here to replace it."
+      : "Not set up yet. Syncing from N3D will fail.";
+  }
+  $("n3d-form").addEventListener("submit", function(e){
+    e.preventDefault();
+    var v = $("n3d-key").value;
+    if (!v) { setStatus($("n3d-key-status"), "Enter your N3D API key.", "bad"); return; }
+    api("/n3d-key", { method:"POST", body:{ key: v } })
+      .then(function(s){ settings = s; setStatus($("n3d-key-status"), "Saved. Click Test key to check it.", "ok"); return refreshStatus(); })
+      .catch(function(err){ setStatus($("n3d-key-status"), err.message, "bad"); });
+  });
+  $("n3d-test").addEventListener("click", function(){
+    setStatus($("n3d-key-status"), "Checking N3D key…");
+    api("/n3d/check").then(function(){ setStatus($("n3d-key-status"), "N3D key works.", "ok"); })
+      .catch(function(e){ setStatus($("n3d-key-status"), e.message, "bad"); });
+  });
+  $("n3d-clear").addEventListener("click", function(){
+    if (!confirm("Remove the saved N3D key and use the N3D_API_KEY environment variable instead?")) return;
+    api("/n3d-key", { method:"POST", body:{ clear:true } })
+      .then(function(s){ settings = s; setStatus($("n3d-key-status"), "Saved key removed.", "ok"); return refreshStatus(); })
+      .catch(function(err){ setStatus($("n3d-key-status"), err.message, "bad"); });
+  });
+
+  // ---------- Square access token ----------
+  function fillSquareToken(){
+    var saved = !!settings.squareAccessTokenSet;
+    $("sq-token").value = "";
+    $("sq-token").placeholder = saved ? "Saved (leave blank to keep)" : "";
+    $("sq-token-clear").hidden = !saved;
+    $("sq-token-source").textContent = saved ? "Using the token below."
+      : status.square ? "Currently using the SQUARE_ACCESS_TOKEN environment variable. Save a token here to replace it."
+      : "Not set up yet. Square push is disabled.";
+  }
+  $("sq-token-form").addEventListener("submit", function(e){
+    e.preventDefault();
+    var v = $("sq-token").value;
+    if (!v) { setStatus($("sq-token-status"), "Enter your Square access token.", "bad"); return; }
+    api("/square-token", { method:"POST", body:{ token: v } })
+      .then(function(s){ settings = s; setStatus($("sq-token-status"), "Saved. Click Test connection to check it.", "ok"); return refreshStatus(); })
+      .catch(function(err){ setStatus($("sq-token-status"), err.message, "bad"); });
+  });
+  $("sq-token-clear").addEventListener("click", function(){
+    if (!confirm("Remove the saved Square token and use the SQUARE_ACCESS_TOKEN environment variable instead?")) return;
+    api("/square-token", { method:"POST", body:{ clear:true } })
+      .then(function(s){ settings = s; setStatus($("sq-token-status"), "Saved token removed.", "ok"); return refreshStatus(); })
+      .catch(function(err){ setStatus($("sq-token-status"), err.message, "bad"); });
+  });
 
   // ---------- email (SMTP) ----------
   function fillSmtp(){
@@ -231,7 +280,7 @@
       : status.smtp ? "Currently using the SMTP_* environment variables. Save settings here to replace them."
       : "Not set up yet. Orders are still saved, but no emails go out.";
   }
-  function refreshStatus(){ return api("/status").then(function(s){ status = s; renderConn(); fillSmtp(); }); }
+  function refreshStatus(){ return api("/status").then(function(s){ status = s; renderConn(); fillSmtp(); fillN3dKey(); fillSquareToken(); }); }
   $("smtp-form").addEventListener("submit", function(e){
     e.preventDefault();
     var body = { host: $("smtp-host").value, port: $("smtp-port").value || 587, secure: $("smtp-secure").value,

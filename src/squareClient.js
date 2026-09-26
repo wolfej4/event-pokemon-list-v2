@@ -3,6 +3,7 @@
 // Needs a token with ITEMS_READ + ITEMS_WRITE (+ MERCHANT_PROFILE_READ for the connection test).
 const crypto = require("crypto");
 const sharp = require("sharp");
+const db = require("./db");
 
 const VERSION = process.env.SQUARE_VERSION || "2025-01-23";
 // SQUARE_ENVIRONMENT is what the Unraid compose file sets
@@ -11,10 +12,17 @@ function base() {
   if (process.env.SQUARE_API_BASE) return process.env.SQUARE_API_BASE; // for testing
   return isSandbox() ? "https://connect.squareupsandbox.com" : "https://connect.squareup.com";
 }
-function configured() { return !!process.env.SQUARE_ACCESS_TOKEN; }
+// The token saved in admin wins; otherwise fall back to SQUARE_ACCESS_TOKEN.
+function config() {
+  const saved = db.getSettings().squareAccessToken;
+  if (saved) return { token: saved, source: "app" };
+  return { token: process.env.SQUARE_ACCESS_TOKEN || "", source: "env" };
+}
+function configured() { return !!config().token; }
 function authHeaders() {
-  if (!configured()) throw new Error("SQUARE_ACCESS_TOKEN is not set");
-  return { Authorization: "Bearer " + process.env.SQUARE_ACCESS_TOKEN, "Square-Version": VERSION };
+  const token = config().token;
+  if (!token) throw new Error("The Square access token isn't set. Add it in admin \u2192 Square, or set SQUARE_ACCESS_TOKEN.");
+  return { Authorization: "Bearer " + token, "Square-Version": VERSION };
 }
 const sleep = (ms) => new Promise(r => setTimeout(r, ms));
 const envName = () => (isSandbox() ? "sandbox" : "production");
@@ -22,9 +30,10 @@ const envName = () => (isSandbox() ? "sandbox" : "production");
 // Square answers a token from the other environment with a bare "could not be
 // authorized", so say what to check instead.
 function authError() {
+  const where = config().source === "app" ? "the token saved in admin → Square" : "SQUARE_ACCESS_TOKEN";
   const e = new Error(isSandbox()
-    ? "Square rejected the access token. The app is in sandbox mode (SQUARE_ENV / SQUARE_ENVIRONMENT = sandbox), which needs the Sandbox access token from the Square Developer Console, not your production one. Update SQUARE_ACCESS_TOKEN or switch the environment back, then redeploy."
-    : "Square rejected the access token. The app is in production mode, which needs your Production access token from the Square Developer Console (not the Sandbox one). Check SQUARE_ACCESS_TOKEN, then redeploy.");
+    ? `Square rejected the access token. The app is in sandbox mode (SQUARE_ENV / SQUARE_ENVIRONMENT = sandbox), which needs the Sandbox access token from the Square Developer Console, not your production one. Update ${where}, or switch the environment back and redeploy.`
+    : `Square rejected the access token. The app is in production mode, which needs your Production access token from the Square Developer Console (not the Sandbox one). Check ${where}, then try again.`);
   e.status = 401;
   return e;
 }
@@ -305,6 +314,6 @@ async function deleteItems(ids) {
 }
 
 module.exports = {
-  envName, isSandbox, configured, testConnection, upsertItem, uploadImage, listAppItems, deleteItems, describe,
+  envName, isSandbox, configured, config, testConnection, upsertItem, uploadImage, listAppItems, deleteItems, describe,
   listCategories, ensureCategories, ensureCustomAttributeDefinitions
 };

@@ -132,6 +132,19 @@
           <p class="sub" id="sq-conn">Checking…</p>
           <button class="btn" id="sq-test" type="button">Test connection</button>
           <div id="sq-locations" class="status"></div>
+          <form id="sq-token-form" autocomplete="off" style="margin-top:18px">
+            <h3>Access token</h3>
+            <p class="sub" id="sq-token-source"></p>
+            <div class="field"><label for="sq-token">Square access token</label><input id="sq-token" type="password" autocomplete="new-password"></div>
+            <p class="sub">Stored in <code>db.json</code> on the data volume. Saving here replaces <code>SQUARE_ACCESS_TOKEN</code>, so it survives
+              redeploys that don't preserve environment variables. The sandbox/production choice (<code>SQUARE_ENV</code>) still comes from the
+              environment.</p>
+            <div class="row">
+              <button class="btn primary" type="submit">Save token</button>
+              <button class="btn ghost" id="sq-token-clear" type="button" hidden>Use environment variable instead</button>
+            </div>
+            <p class="status" id="sq-token-status" role="status"></p>
+          </form>
         </div>
         <div class="panel">
           <h3>Push catalog</h3>
@@ -207,11 +220,7 @@
         </form>
         <div class="panel">
           <h3>Connections</h3>
-          <p class="sub">API keys are set as environment variables in Portainer. Email can be set below instead.</p>
           <ul class="conn" id="conn-list"></ul>
-          <div class="row"><button class="btn" id="n3d-test" type="button">Test N3D key</button>
-          <button class="btn" id="smtp-test" type="button">Test email</button></div>
-          <p class="status" id="conn-status"></p>
           <h3 style="margin-top:22px">Kiosk mode</h3>
           <p class="sub">For a booth tablet: open <code>/?kiosk=1</code> once on that device. It hides outside shop links, uses larger buttons, and clears the cart after inactivity. Open <code>/?kiosk=0</code> to turn it off.</p>
         </div>
@@ -241,6 +250,20 @@
           <button class="btn ghost" id="smtp-clear" type="button" hidden>Use environment variables instead</button>
         </div>
         <p class="status" id="smtp-status" role="status"></p>
+      </form>
+
+      <form class="panel" id="n3d-form" style="margin-top:18px" autocomplete="off">
+        <h3>N3D API key</h3>
+        <p class="sub" id="n3d-source"></p>
+        <div class="field"><label for="n3d-key">API key</label><input id="n3d-key" type="password" autocomplete="new-password" placeholder="n3d_sk_..."></div>
+        <p class="sub">Stored in <code>db.json</code> on the data volume. Saving here replaces <code>N3D_API_KEY</code>, so it survives redeploys
+          that don't preserve environment variables.</p>
+        <div class="row">
+          <button class="btn primary" type="submit">Save N3D key</button>
+          <button class="btn" id="n3d-test" type="button">Test key</button>
+          <button class="btn ghost" id="n3d-clear" type="button" hidden>Use environment variable instead</button>
+        </div>
+        <p class="status" id="n3d-key-status" role="status"></p>
       </form>
 
       <div class="panel" style="margin-top:18px">

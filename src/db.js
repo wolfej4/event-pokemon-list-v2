@@ -31,6 +31,8 @@ const DEFAULT_SETTINGS = {
   logos: {},             // { light: {ext,type,v}, dark: {...} } files live in DATA_DIR
   logoShowName: true,    // show business name next to the logo
   smtp: {},              // { host, port, secure, user, pass, from } — overrides SMTP_* env vars when host is set
+  n3dApiKey: "",          // overrides N3D_API_KEY when set
+  squareAccessToken: "",  // overrides SQUARE_ACCESS_TOKEN when set
   lastCursor: null
 };
 
