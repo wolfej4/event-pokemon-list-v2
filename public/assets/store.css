@@ -75,7 +75,7 @@ main{ max-width:1200px; margin:0 auto; padding:8px clamp(16px, 4vw, 40px) 60px; 
 .detail-nav .pos{ color:var(--faint); font-size:.82rem; font-variant-numeric:tabular-nums; min-width:4.5em; text-align:center; }
 @media (prefers-reduced-motion: reduce){ .dialog.from-right, .dialog.from-left{ animation:none; } }
 .dialog .media{ background:var(--raised); }
-.dialog .media img{ width:100%; aspect-ratio:1; object-fit:cover; }
+.dialog .media img{ width:100%; aspect-ratio:1; object-fit:contain; }
 .dialog .info{ padding:24px; display:flex; flex-direction:column; gap:14px; }
 .dialog h2{ font-family:var(--display); font-weight:800; font-size:1.8rem; line-height:1.05; letter-spacing:-.02em; margin:0; }
 .types{ display:flex; gap:6px; flex-wrap:wrap; }
@@ -100,7 +100,7 @@ main{ max-width:1200px; margin:0 auto; padding:8px clamp(16px, 4vw, 40px) 60px; 
 @media (max-width:720px){
   .overlay{ align-items:flex-end; padding:0; }
   .dialog{ grid-template-columns:1fr; border-radius:18px 18px 0 0; max-height:92vh; }
-  .dialog .media img{ aspect-ratio:4/3; }
+  .dialog .media img{ aspect-ratio:4/3; object-fit:contain; }
 }
 
 
