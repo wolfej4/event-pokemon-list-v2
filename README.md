@@ -56,7 +56,11 @@ panel for pricing, N3D sync, and pushing to Square. Light and dark mode on both.
   custom attribute definitions are created in Square the first time they're
   needed and reused after that (checked against Square's real catalog, so
   nothing is duplicated by a restart or switching between sandbox and
-  production).
+  production). This step is independent of the core item push: if it fails
+  (for example the token isn't permitted to manage categories or custom
+  attributes), the price, photo, description and SKU still update, and the
+  Designs tab shows a "No categories" note with Square's reason instead of
+  only logging it to the container.
 - **Settings:** business name, tagline, your order email, phone, PDF fine print,
   kiosk timeout, and connection tests.
 - **Inventory:** if `SPOOLMAN_URL` is set, compares the filament colors your designs

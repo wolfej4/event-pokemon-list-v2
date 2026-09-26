@@ -382,13 +382,18 @@ async function pushOne(slug) {
   // balls and anything without a Pokémon don't get one
   const shinyPriceCents = d.pokemon ? priceCents + Math.round((Number(s.pricing.shinyUpcharge) || 0) * 100) : null;
 
-  let catFields = {}, customAttrs = {};
+  // Categories/attributes are set up separately from the core item push, so a
+  // hiccup here (permissions, an unsupported Square API version) doesn't
+  // block the price and photo from updating — but the failure is recorded
+  // and shown in admin instead of only going to the container log, so it's
+  // visible without shell access to the server.
+  let catFields = {}, customAttrs = {}, categoriesError = null;
   try {
     catFields = await catalog.categoriesFieldsFor(d);
     customAttrs = await catalog.customAttributesFor(d);
   } catch (e) {
-    // a hiccup creating a category shouldn't block the item's price and photo from updating
     console.error("[square] categories/attributes failed for " + slug + ":", e.message);
+    categoriesError = e.message;
   }
 
   let item;
@@ -404,7 +409,8 @@ async function pushOne(slug) {
     throw e;
   }
   const created = item.created; delete item.created;
-  let saved = saveIds(created ? Object.assign(item, { square_image_src: null, square_image_ok: false }) : item, { square_error: null });
+  let saved = saveIds(created ? Object.assign(item, { square_image_src: null, square_image_ok: false }) : item,
+    { square_error: null, square_categories_error: categoriesError });
 
   // Every push records what happened to the photo, so it never fails silently.
   // Upload when the item is new, N3D changed the image, or it hasn't been
