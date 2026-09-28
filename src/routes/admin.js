@@ -211,13 +211,23 @@ router.post("/sync", async (req, res) => {
   syncing = true;
   const full = !!(req.body && req.body.full);
   try {
-    let added = 0, updated = 0;
+    let added = 0, updated = 0, noImage = 0, samplePage = null;
     const result = await n3d.syncCatalog({
       since: full ? null : db.getSettings().lastCursor,
       onPage: async (designs) => {
+        // N3D's docs say image_url is always a populated string; if that's
+        // ever not true for a whole page, log one raw example so it's easy
+        // to tell "N3D didn't send it" from "we dropped it somewhere".
+        if (!samplePage && designs.length) {
+          samplePage = designs[0];
+          if (designs.some(d => d && d.slug && !d.image_url)) {
+            console.warn("[sync] a design came back with no image_url; example:", JSON.stringify(samplePage));
+          }
+        }
         for (const d of designs) {
           if (!d || !d.slug) continue;
           const isNew = !db.getDesign(d.slug);
+          if (!d.image_url) noImage++;
           db.upsertDesign(d.slug, {
             title: d.title, category: d.category, image_url: d.image_url,
             print_time: d.print_time, total_weight_grams: d.total_weight_grams,
@@ -236,7 +246,7 @@ router.post("/sync", async (req, res) => {
     });
     if (result.cursor) db.updateSettings({ lastCursor: result.cursor });
     enrich.run(); // sprites and evolution families, in the background
-    res.json({ ok: true, added, updated, seen: result.total });
+    res.json({ ok: true, added, updated, seen: result.total, noImage });
   } catch (e) {
     res.status(e.isAuth ? 502 : 500).json({ error: e.message || "Sync failed." });
   } finally {
