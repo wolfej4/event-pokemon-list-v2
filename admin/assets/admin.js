@@ -98,6 +98,8 @@
         '<td class="muted">' + money(d.formula_cents) + '</td>' +
         '<td><input class="input price-in" type="number" min="0" step="0.01" placeholder="Formula" aria-label="Custom price" value="' +
           (d.price_cents != null ? (d.price_cents/100).toFixed(2) : "") + '"></td>' +
+        '<td><input class="input large-in" type="number" min="0" step="0.01" placeholder="Not offered" aria-label="Large price" value="' +
+          (d.large_price_cents != null ? (d.large_price_cents/100).toFixed(2) : "") + '"></td>' +
         '<td><input class="input url-in" type="url" placeholder="https://" aria-label="Shop link" value="' + esc(d.shop_url || "") + '"></td>' +
         '<td><input type="checkbox" class="vis" aria-label="Visible on store"' + (d.visible !== false ? " checked" : "") + '></td>' +
         '<td>' + squareCell(d) + '</td>' +
@@ -119,13 +121,14 @@
     if (btn.hasAttribute("data-save")) {
       p = api("/designs/" + encodeURIComponent(slug), { method:"POST", body:{
         price: tr.querySelector(".price-in").value,
+        large_price: tr.querySelector(".large-in").value,
         shop_url: tr.querySelector(".url-in").value,
         visible: tr.querySelector(".vis").checked
       }}).then(function(r){ replaceDesign(r.data); tr.classList.toggle("off", r.data.visible === false); note.textContent = "Saved"; });
     } else {
       note.textContent = "Pushing…";
       p = api("/square/push/" + encodeURIComponent(slug), { method:"POST" })
-        .then(function(r){ replaceDesign(r.data); tr.children[6].innerHTML = squareCell(r.data); note.textContent = "Pushed"; });
+        .then(function(r){ replaceDesign(r.data); tr.children[7].innerHTML = squareCell(r.data); note.textContent = "Pushed"; });
     }
     p.catch(function(err){ note.style.color = "var(--bad)"; note.textContent = err.message; if (btn.hasAttribute("data-push")) loadDesigns(); })
      .finally(function(){ btn.disabled = false; setTimeout(function(){ if (note.textContent === "Saved" || note.textContent === "Pushed") note.textContent = ""; }, 2000); });

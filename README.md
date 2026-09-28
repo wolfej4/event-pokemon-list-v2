@@ -34,6 +34,13 @@ panel for pricing, N3D sync, and pushing to Square. Light and dark mode on both.
 **Admin (`/admin`)**
 - **Designs:** sync from N3D (incremental or full), set a custom price per
   design, add a "Buy online" link, hide/show designs, push single designs to Square.
+  A design can also offer a "Large" size at its own flat price you set (leave
+  it blank for "not offered") — for a bigger print than N3D's own listing,
+  which takes more filament/time than N3D's numbers cover so there's no
+  formula for it. It shows next to the regular price on the storefront and,
+  independently of Shiny (a design can offer Shiny, Large, both, or neither —
+  there's no combined "Large Shiny" listing), pushes to Square as its own
+  "Large" item variation with `<SKU>-LARGE`.
 - **Pricing:** formula for any design without a custom price:
   `(base fee + grams × per-gram + hours × per-hour) × (1 + markup%)`, with a
   minimum and optional round-up. Live preview as you type.

@@ -55,7 +55,7 @@ router.get("/status", (req, res) => {
 // Square IDs are kept per environment so testing in sandbox never overwrites
 // (and later duplicates) the items in the live catalog. Designs pushed before
 // this existed only have top-level IDs, and those were always production.
-const SQ_FIELDS = ["square_item_id", "square_variation_id", "square_variation_id_shiny", "square_image_src", "square_image_ok", "square_pushed_at"];
+const SQ_FIELDS = ["square_item_id", "square_variation_id", "square_variation_id_shiny", "square_variation_id_large", "square_image_src", "square_image_ok", "square_pushed_at"];
 function squareIdsFor(d, env) {
   if (d.square_by_env) return d.square_by_env[env] || {};
   if (env === "production" && d.square_item_id) { const o = {}; SQ_FIELDS.forEach(k => { o[k] = d[k]; }); return o; }
@@ -95,6 +95,14 @@ router.post("/designs/:slug", (req, res) => {
     const url = String(b.shop_url || "").trim();
     if (url && !/^https?:\/\//i.test(url)) return res.status(400).json({ error: "Shop link must start with http:// or https://" });
     u.shop_url = url || null;
+  }
+  if ("large_price" in b) {
+    if (b.large_price === "" || b.large_price === null) u.large_price_cents = null;
+    else {
+      const n = Number(b.large_price);
+      if (!Number.isFinite(n) || n < 0 || n > 100000) return res.status(400).json({ error: "Large price must be a positive number." });
+      u.large_price_cents = Math.round(n * 100);
+    }
   }
   if ("visible" in b) u.visible = !!b.visible;
   // null out explicitly (upsert skips undefined, not null)
@@ -397,6 +405,9 @@ async function pushOne(slug) {
   // every Pokémon design also offers a Shiny variation at an upcharge; plain
   // balls and anything without a Pokémon don't get one
   const shinyPriceCents = d.pokemon ? priceCents + Math.round((Number(s.pricing.shinyUpcharge) || 0) * 100) : null;
+  // Large is a separate, manually-priced print (more filament/time than N3D's
+  // own numbers cover), turned on per design by setting a large price in admin
+  const largePriceCents = d.large_price_cents != null ? d.large_price_cents : null;
 
   // Categories/attributes are set up separately from the core item push, so a
   // hiccup here (permissions, an unsupported Square API version) doesn't
@@ -417,7 +428,7 @@ async function pushOne(slug) {
     item = await square.upsertItem(Object.assign({}, d, { square_item_id: ids.square_item_id || null }), priceCents, {
       currency: s.currency, overwritePrice: s.squareOverwritePrices,
       categories: catFields.categories, reportingCategory: catFields.reporting_category,
-      customAttributeValues: customAttrs, shinyPriceCents, sku
+      customAttributeValues: customAttrs, shinyPriceCents, largePriceCents, sku
     });
   } catch (e) {
     console.error("[square] push failed for " + slug + ":", e.message);

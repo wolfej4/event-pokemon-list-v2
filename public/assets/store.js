@@ -111,7 +111,8 @@
         (d.is_extra ? '<span class="tag">Limited</span>' : '') + '</div>' + spool(d) +
         '<div class="card-body"><div class="card-title">' + esc(d.title) + '</div>' +
         '<div class="card-meta">' + esc(meta) + '</div>' +
-        '<div class="card-foot"><span class="price">' + priceHtml(d) + '</span></div>' +
+        '<div class="card-foot"><span class="price">' + priceHtml(d) + '</span>' +
+        (d.large_price ? '<span class="large-pill">Large ' + esc(d.large_price) + '</span>' : '') + '</div>' +
         evoStrip(d) +
         '</div></article>';
     }).join("");
@@ -206,6 +207,7 @@
     h += '<dl class="specs"><div><dt>Price</dt><dd>' + priceHtml(d) + '</dd></div>' +
       '<div><dt>Print time</dt><dd>' + esc(d.print_time || "\u2014") + '</dd></div>' +
       '<div><dt>Weight</dt><dd>' + (d.total_weight_grams ? Math.round(d.total_weight_grams) + " g" : "\u2014") + '</dd></div></dl>';
+    if (d.large_price) h += '<p class="large-note">A large version is also available: <strong>' + esc(d.large_price) + '</strong></p>';
     if (d.filaments && d.filaments.length){
       h += '<ul class="filaments">' + d.filaments.map(function(f){
         return '<li><span class="swatch" style="background:' + safeColor(f.hex_color) + '"></span>' + esc(f.color) +

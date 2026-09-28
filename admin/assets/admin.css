@@ -49,6 +49,7 @@ tr.off td{ opacity:.55; }
 .dm{ color:var(--faint); font-size:.78rem; }
 td .input{ padding:6px 9px; font-size:.86rem; border-radius:8px; }
 td .price-in{ width:92px; }
+td .large-in{ width:92px; }
 td .url-in{ min-width:180px; }
 .muted{ color:var(--faint); }
 .pill{ display:inline-block; padding:2px 8px; border-radius:999px; font-size:.75rem; font-weight:700; background:var(--raised); color:var(--muted); white-space:nowrap; }

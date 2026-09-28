@@ -50,6 +50,12 @@ main{ max-width:1200px; margin:0 auto; padding:8px clamp(16px, 4vw, 40px) 60px; 
 .card-foot{ margin-top:auto; display:flex; align-items:center; justify-content:space-between; gap:8px; padding-top:6px; }
 .price{ font-weight:700; font-size:1.02rem; }
 .price small{ color:var(--faint); font-weight:400; font-size:.75rem; margin-left:3px; }
+.large-pill{
+  padding:3px 9px; border-radius:999px; background:var(--raised); color:var(--muted);
+  font-size:.72rem; font-weight:700; white-space:nowrap;
+}
+.large-note{ color:var(--muted); font-size:.88rem; margin:0; }
+.large-note strong{ color:var(--ink); }
 
 .empty{ text-align:center; padding:60px 20px; color:var(--muted); }
 
