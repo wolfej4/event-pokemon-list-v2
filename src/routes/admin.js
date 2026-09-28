@@ -1,4 +1,5 @@
 "use strict";
+const fs = require("fs");
 const express = require("express");
 const db = require("../db");
 const n3d = require("../n3dClient");
@@ -12,6 +13,7 @@ const { checkPassword, requireAdmin } = require("../auth");
 const rateLimit = require("../rateLimit");
 const logo = require("../logo");
 const enrich = require("../enrich");
+const photos = require("../photos");
 const catalog = require("../squareCatalog");
 
 const router = express.Router();
@@ -60,6 +62,7 @@ function toAdmin(d, s) {
   const ids = squareIdsFor(d, square.envName());
   const current = {}; SQ_FIELDS.forEach(k => { current[k] = ids[k] || null; });
   return Object.assign({}, d, current, {
+    image_url: photos.urlFor(d) || d.image_url,
     formula_cents: formulaCents(d, s.pricing),
     effective_cents: unitCents(d, s.pricing)
   });
@@ -419,7 +422,10 @@ async function pushOne(slug) {
     saved = db.upsertDesign(slug, { square_image_error: "N3D has no image for this design" });
   } else if (created || ids.square_image_src !== d.image_url || !ids.square_image_ok) {
     try {
-      await square.uploadImage(item.square_item_id, d.image_url, String(d.title || slug));
+      // use our cached copy when we have one, instead of re-fetching from N3D
+      const cachedFile = photos.fileFor(slug);
+      const src = fs.existsSync(cachedFile) ? fs.readFileSync(cachedFile) : d.image_url;
+      await square.uploadImage(item.square_item_id, src, String(d.title || slug));
       saved = saveIds({ square_image_src: d.image_url, square_image_ok: true }, { square_image_error: null });
     } catch (e) {
       console.error("[square] photo upload failed for " + slug + ":", e.message);

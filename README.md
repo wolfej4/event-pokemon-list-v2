@@ -13,6 +13,12 @@ panel for pricing, N3D sync, and pushing to Square. Light and dark mode on both.
   N3D hasn't sent a photo for yet shows "Photo coming soon" instead of a
   broken image (admin's Designs table shows "No photo" the same way) — sync
   again once N3D has rendered it.
+- Photos, like the evolution sprites, are downloaded once after each sync and
+  cached in `/app/data/photos` instead of being hotlinked from N3D on every
+  visit — the storefront, admin, and a Square push all use the cached copy
+  once it's there. A photo is only re-downloaded when N3D's URL for it
+  changes; until the cache catches up (right after a sync, or briefly for a
+  brand-new design) it falls back to N3D's URL directly.
 - Browse-only: there's no cart, online ordering or payment.
 - Evolution families: each card shows a strip of N3D sprites for the design's
   evolution line (e.g. Squirtle → Wartortle → Blastoise, "+N" for branches like
