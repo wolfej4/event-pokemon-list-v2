@@ -15,6 +15,7 @@ const logo = require("../logo");
 const enrich = require("../enrich");
 const photos = require("../photos");
 const catalog = require("../squareCatalog");
+const version = require("../version");
 
 const router = express.Router();
 
@@ -35,6 +36,8 @@ router.use(requireAdmin);
 // ---------- status ----------
 router.get("/status", (req, res) => {
   res.json({
+    version: version.version,
+    buildSha: version.sha,
     n3dKey: n3d.configured(),
     n3dKeySource: n3d.config().source,
     smtp: mailer.configured(),

@@ -9,6 +9,7 @@
   padding:10px clamp(14px, 3vw, 32px); background:var(--surface); border-bottom:1px solid var(--line);
 }
 .bar .title{ font-family:var(--display); font-weight:800; font-size:1.1rem; }
+.bar .ver{ color:var(--faint); font-size:.74rem; font-weight:600; margin-left:2px; }
 .tabs{ display:flex; gap:2px; overflow-x:auto; }
 .tabs button{ border:none; background:none; padding:8px 12px; border-radius:8px; cursor:pointer; color:var(--muted); font-weight:700; }
 .tabs button.active{ background:var(--accent-soft); color:var(--accent); }

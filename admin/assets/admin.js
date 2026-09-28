@@ -50,7 +50,7 @@
   function boot(){
     Promise.all([api("/settings"), api("/status")]).then(function(r){
       settings = r[0]; status = r[1];
-      fillSettings(); fillSmtp(); fillN3dKey(); fillSquareToken(); fillPricing(); renderConn(); renderLogos(); renderStorageAlert();
+      fillSettings(); fillSmtp(); fillN3dKey(); fillSquareToken(); fillPricing(); renderConn(); renderLogos(); renderStorageAlert(); fillVersion();
       startOrderWatch();
       var tab = location.hash.slice(1) === "orders" ? "quotes" : location.hash.slice(1);
       var tabBtn = tab && document.querySelector('.tabs [data-tab="' + tab.replace(/[^a-z]/g, "") + '"]');
@@ -281,7 +281,14 @@
       : status.smtp ? "Currently using the SMTP_* environment variables. Save settings here to replace them."
       : "Not set up yet. Orders are still saved, but no emails go out.";
   }
-  function refreshStatus(){ return api("/status").then(function(s){ status = s; renderConn(); fillSmtp(); fillN3dKey(); fillSquareToken(); }); }
+  function fillVersion(){
+    var el = $("bar-version");
+    if (!status.version) { el.hidden = true; return; }
+    el.hidden = false;
+    el.textContent = "v" + status.version + (status.buildSha ? " (" + status.buildSha + ")" : "");
+    el.title = "Running version" + (status.buildSha ? " — build " + status.buildSha : "");
+  }
+  function refreshStatus(){ return api("/status").then(function(s){ status = s; renderConn(); fillSmtp(); fillN3dKey(); fillSquareToken(); fillVersion(); }); }
   $("smtp-form").addEventListener("submit", function(e){
     e.preventDefault();
     var body = { host: $("smtp-host").value, port: $("smtp-port").value || 587, secure: $("smtp-secure").value,
