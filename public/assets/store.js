@@ -107,7 +107,7 @@
       var p = d.pokemon;
       var meta = p ? ((p.pokedex_number ? "#" + p.pokedex_number + " " : "") + (p.types || []).join(" / ")) : (d.category || "");
       return '<article class="card" data-slug="' + esc(d.slug) + '" tabindex="0" role="button" aria-label="' + esc(d.title) + '">' +
-        '<div class="thumb">' + (d.image_url ? '<img loading="lazy" alt="" src="' + esc(safeUrl(d.image_url)) + '">' : '') +
+        '<div class="thumb">' + (d.image_url ? '<img loading="lazy" alt="" src="' + esc(safeUrl(d.image_url)) + '">' : '<div class="no-photo">Photo coming soon</div>') +
         (d.is_extra ? '<span class="tag">Limited</span>' : '') + '</div>' + spool(d) +
         '<div class="card-body"><div class="card-title">' + esc(d.title) + '</div>' +
         '<div class="card-meta">' + esc(meta) + '</div>' +
@@ -191,7 +191,7 @@
     var p = d.pokemon;
     var i = shown.indexOf(slug), n = shown.length;
     currentSlug = slug;
-    var h = '<div class="media">' + (d.image_url ? '<img alt="' + esc(d.title) + '" src="' + esc(safeUrl(d.image_url)) + '">' : '') + spool(d) + '</div>';
+    var h = '<div class="media">' + (d.image_url ? '<img alt="' + esc(d.title) + '" src="' + esc(safeUrl(d.image_url)) + '">' : '<div class="no-photo">Photo coming soon</div>') + spool(d) + '</div>';
     h += '<div class="info"><div class="detail-top">' +
       (i > -1 && n > 1 ? '<div class="detail-nav">' +
         '<button type="button" class="btn ghost small" data-nav="-1" aria-label="Previous design"' + (i === 0 ? " disabled" : "") + '>\u2039</button>' +

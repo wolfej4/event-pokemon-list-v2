@@ -9,7 +9,10 @@ panel for pricing, N3D sync, and pushing to Square. Light and dark mode on both.
 - Browse, search (name, type, Pokédex #), and filter designs. Each card shows a
   strip of the design's actual filament colors.
 - Each design shows its price, print time, weight and filament colors, plus a
-  "Buy online" button when it has a shop link (hidden in kiosk mode).
+  "Buy online" button when it has a shop link (hidden in kiosk mode). A design
+  N3D hasn't sent a photo for yet shows "Photo coming soon" instead of a
+  broken image (admin's Designs table shows "No photo" the same way) — sync
+  again once N3D has rendered it.
 - Browse-only: there's no cart, online ordering or payment.
 - Evolution families: each card shows a strip of N3D sprites for the design's
   evolution line (e.g. Squirtle → Wartortle → Blastoise, "+N" for branches like
