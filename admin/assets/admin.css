@@ -43,6 +43,7 @@ td{ padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:middle
 tr:last-child td{ border-bottom:none; }
 tr.off td{ opacity:.55; }
 .th{ width:44px; height:44px; border-radius:8px; object-fit:cover; background:var(--raised); }
+.th.no-photo{ display:flex; align-items:center; justify-content:center; text-align:center; font-size:.55rem; line-height:1.1; color:var(--faint); padding:2px; }
 .dt{ font-weight:700; line-height:1.2; max-width:240px; }
 .dm{ color:var(--faint); font-size:.78rem; }
 td .input{ padding:6px 9px; font-size:.86rem; border-radius:8px; }

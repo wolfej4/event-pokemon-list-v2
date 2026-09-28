@@ -179,10 +179,20 @@ async function toSquareJpeg(buf, contentType) {
   }
 }
 
-async function uploadImage(itemId, imageUrl, name) {
-  const img = await fetch(imageUrl);
-  if (!img.ok) throw new Error("couldn't download the design image from N3D (HTTP " + img.status + ")");
-  const jpeg = await toSquareJpeg(Buffer.from(await img.arrayBuffer()), img.headers.get("content-type"));
+// imageSource is either a URL to fetch (N3D) or an already-downloaded Buffer
+// (our local cache), so a push doesn't have to hit N3D again for a photo it
+// already has a copy of.
+async function uploadImage(itemId, imageSource, name) {
+  let buf, contentType;
+  if (Buffer.isBuffer(imageSource)) {
+    buf = imageSource; contentType = "image/webp";
+  } else {
+    const img = await fetch(imageSource);
+    if (!img.ok) throw new Error("couldn't download the design image from N3D (HTTP " + img.status + ")");
+    buf = Buffer.from(await img.arrayBuffer());
+    contentType = img.headers.get("content-type");
+  }
+  const jpeg = await toSquareJpeg(buf, contentType);
 
   const form = new FormData();
   // Square's multipart parts are "request" (JSON string) and "image_file"

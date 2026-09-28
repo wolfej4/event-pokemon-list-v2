@@ -92,7 +92,7 @@
       "No designs yet. Sync from N3D to pull in your catalog.";
     $("rows").innerHTML = list.map(function(d){
       return '<tr data-slug="' + esc(d.slug) + '"' + (d.visible === false ? ' class="off"' : '') + '>' +
-        '<td><img class="th" loading="lazy" alt="" src="' + esc(d.image_url || "") + '"></td>' +
+        '<td>' + (d.image_url ? '<img class="th" loading="lazy" alt="" src="' + esc(d.image_url) + '">' : '<div class="th no-photo" title="N3D hasn\'t provided a photo for this design">No photo</div>') + '</td>' +
         '<td><div class="dt">' + esc(d.title) + '</div><div class="dm">' + esc(d.category || "") +
           (d.total_weight_grams ? ", " + Math.round(d.total_weight_grams) + " g" : "") + (d.print_time ? ", " + esc(d.print_time) : "") + '</div></td>' +
         '<td class="muted">' + money(d.formula_cents) + '</td>' +

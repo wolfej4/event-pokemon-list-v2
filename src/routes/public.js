@@ -6,6 +6,7 @@ const { unitCents, fmt } = require("../pricing");
 const { buildQuotePdf } = require("../pdf");
 const logo = require("../logo");
 const sprites = require("../sprites");
+const photos = require("../photos");
 const evolutions = require("../evolutions");
 
 const router = express.Router();
@@ -34,7 +35,8 @@ function toPublic(d, s, have) {
     slug: d.slug,
     title: d.title,
     category: d.category,
-    image_url: d.image_url,
+    // our cached copy, or N3D's photo URL until the cache catches up
+    image_url: photos.urlFor(d) || d.image_url,
     print_time: d.print_time,
     total_weight_grams: d.total_weight_grams,
     is_extra: !!d.purchase_only,

@@ -51,6 +51,16 @@ app.get("/sprites/:file", (req, res) => {
   });
 });
 
+// cached N3D design photos; the ?v=<key> in each URL makes them safe to cache forever
+app.get("/photos/:file", (req, res) => {
+  const m = /^([a-z0-9_-]{1,120})\.webp$/i.exec(req.params.file);
+  const photos = require("./src/photos");
+  if (!m) return res.status(404).end();
+  res.sendFile(photos.fileFor(m[1]), { headers: { "Cache-Control": "public, max-age=31536000, immutable" } }, (err) => {
+    if (err && !res.headersSent) res.status(404).end();
+  });
+});
+
 app.get("/healthz", (req, res) => res.json({ ok: true }));
 app.use("/api/public", require("./src/routes/public"));
 app.use("/api/admin", require("./src/routes/admin"));
