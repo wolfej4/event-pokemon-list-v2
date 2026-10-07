@@ -26,7 +26,10 @@ body{ padding-bottom:env(safe-area-inset-bottom); }
 .chip.active{ background:var(--ink); color:var(--bg); border-color:var(--ink); }
 
 main{ max-width:1200px; margin:0 auto; padding:8px clamp(16px, 4vw, 40px) 60px; }
-.result-count{ color:var(--faint); font-size:.88rem; margin:6px 0 16px; }
+.list-bar{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin:6px 0 16px; }
+.result-count{ color:var(--faint); font-size:.88rem; margin:0; }
+.sort{ display:flex; align-items:center; gap:8px; color:var(--muted); font-size:.88rem; font-weight:700; }
+.sort .input{ width:auto; padding:7px 10px; font-size:.88rem; cursor:pointer; }
 .grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(210px, 1fr)); gap:18px; }
 
 .card{
@@ -110,6 +113,7 @@ main{ max-width:1200px; margin:0 auto; padding:8px clamp(16px, 4vw, 40px) 60px; 
 /* kiosk mode: bigger targets, no leaving the app */
 body.kiosk .card-title{ font-size:1.12rem; }
 body.kiosk .chip{ padding:10px 16px; font-size:.98rem; }
+body.kiosk .sort .input{ padding:10px 14px; font-size:.98rem; }
 body.kiosk .grid{ grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); }
 body.kiosk .site-footer{ display:none; }
 

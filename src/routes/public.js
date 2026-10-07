@@ -40,6 +40,9 @@ function toPublic(d, s, have) {
     print_time: d.print_time,
     total_weight_grams: d.total_weight_grams,
     is_extra: !!d.purchase_only,
+    // for "Newest/Oldest first": N3D's creation date, else when we first synced it
+    // (designs synced before added_at existed fall back to N3D's last update)
+    added_at: d.created_at || d.added_at || d.updated_at || null,
     price_cents: cents,
     price: fmt(cents, s.currency),
     price_is_estimate: d.price_cents == null,

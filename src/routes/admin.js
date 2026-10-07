@@ -221,8 +221,10 @@ router.post("/sync", async (req, res) => {
             round: d.round, purchase_only: d.purchase_only, updated_at: d.updated_at,
             pokemon: d.pokemon, filaments: d.filaments,
             sprite_url: d.sprite_url || null, sprite_revision: d.sprite_revision || null,
+            created_at: d.created_at || undefined,
             synced_at: new Date().toISOString(),
             // first-time defaults; undefined leaves existing admin values alone
+            added_at: isNew ? new Date().toISOString() : undefined,
             visible: isNew ? true : undefined,
             price_cents: isNew ? null : undefined,
             shop_url: isNew ? null : undefined
