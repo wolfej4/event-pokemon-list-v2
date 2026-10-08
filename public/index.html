@@ -46,7 +46,19 @@
 </section>
 
 <main>
-  <p id="result-count" class="result-count" aria-live="polite"></p>
+  <div class="list-bar">
+    <p id="result-count" class="result-count" aria-live="polite"></p>
+    <label class="sort">
+      <span>Sort</span>
+      <select id="sort" class="input">
+        <option value="az">Name (A-Z)</option>
+        <option value="za">Name (Z-A)</option>
+        <option value="dex">Pokédex #</option>
+        <option value="newest">Newest First</option>
+        <option value="oldest">Oldest First</option>
+      </select>
+    </label>
+  </div>
   <div id="grid" class="grid"></div>
   <div id="empty" class="empty" hidden>
     <p>No designs match that search.</p>

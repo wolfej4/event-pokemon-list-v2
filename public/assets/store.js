@@ -3,7 +3,7 @@
   var $ = function(id){ return document.getElementById(id); };
   var KIOSK_KEY = "n3dcat-kiosk";
 
-  var designs = [], bySlug = {}, settings = {}, filter = { cat:"all", q:"" };
+  var designs = [], bySlug = {}, settings = {}, filter = { cat:"all", q:"" }, sortBy = "az";
   var lastFocus = null;
   var shown = [], currentSlug = null; // grid order, for stepping through designs in the detail view
 
@@ -75,6 +75,7 @@
     filter.cat = b.dataset.cat; render();
   });
   $("clear-filters").addEventListener("click", function(){ $("search").value = ""; filter.q = ""; render(); });
+  $("sort").addEventListener("change", function(e){ sortBy = e.target.value; render(); });
 
   function matches(d){
     if (filter.cat !== "all" && d.category !== filter.cat) return false;
@@ -83,6 +84,28 @@
     var hay = [d.title, d.slug, p.name, p.pokedex_number, (p.types || []).join(" ")].join(" ").toLowerCase();
     return filter.q.split(/\s+/).every(function(w){ return hay.indexOf(w) !== -1; });
   }
+
+  // ---------- sort ----------
+  function byName(a, b){ return (a.title || "").localeCompare(b.title || "", undefined, { numeric:true, sensitivity:"base" }); }
+  function dexOf(d){ var n = Number(d.pokemon && d.pokemon.pokedex_number); return n > 0 ? n : Infinity; }
+  function timeOf(d){ var t = Date.parse(d.added_at || ""); return isNaN(t) ? null : t; }
+  function byTime(dir){ // undated designs go last either way
+    return function(a, b){
+      var ta = timeOf(a), tb = timeOf(b);
+      if (ta === tb) return byName(a, b);
+      if (ta === null) return 1;
+      if (tb === null) return -1;
+      return (ta - tb) * dir;
+    };
+  }
+  var SORTS = {
+    az: byName,
+    za: function(a, b){ return byName(b, a); },
+    // designs without a Pokémon go after the numbered ones
+    dex: function(a, b){ var na = dexOf(a), nb = dexOf(b); return na === nb ? byName(a, b) : (na < nb ? -1 : 1); },
+    newest: byTime(-1),
+    oldest: byTime(1)
+  };
 
   function spool(d){
     var f = (d.filaments || []).filter(function(x){ return x.weight_grams > 0; });
@@ -98,7 +121,7 @@
   }
 
   function render(){
-    var list = designs.filter(matches);
+    var list = designs.filter(matches).sort(SORTS[sortBy] || byName);
     shown = list.map(function(d){ return d.slug; });
     $("result-count").textContent = list.length + (list.length === 1 ? " design" : " designs");
     $("empty").hidden = list.length > 0 || designs.length === 0;
@@ -267,6 +290,7 @@
     var reset = function(){
       $("detail").hidden = true; document.body.style.overflow = "";
       $("search").value = ""; filter = { cat:"all", q:"" };
+      $("sort").value = sortBy = "az";
       [].forEach.call(document.querySelectorAll(".chip"), function(c){ c.classList.toggle("active", c.dataset.cat === "all"); });
       render(); window.scrollTo(0, 0);
     };
