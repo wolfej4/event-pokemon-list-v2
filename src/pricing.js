@@ -32,8 +32,15 @@ function unitCents(d, pricing) {
   return formulaCents(d, pricing);
 }
 
+// The Shiny variation's price: the design's price plus the Shiny upcharge. Only
+// Pokémon designs have one (plain balls and extras don't), so null otherwise.
+function shinyCents(d, pricing) {
+  if (!d.pokemon) return null;
+  return unitCents(d, pricing) + Math.round((Number(pricing.shinyUpcharge) || 0) * 100);
+}
+
 function fmt(cents, currency = "USD") {
   return (cents / 100).toLocaleString("en-US", { style: "currency", currency });
 }
 
-module.exports = { parsePrintHours, formulaCents, unitCents, fmt };
+module.exports = { parsePrintHours, formulaCents, unitCents, shinyCents, fmt };

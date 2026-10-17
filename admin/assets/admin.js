@@ -475,10 +475,37 @@
     $("sp-match").value = settings.spoolmanMatchThreshold;
     $("sp-conn").textContent = status.spoolman ? "SPOOLMAN_URL is set." : "SPOOLMAN_URL isn't set. Add it to the stack's environment variables and redeploy.";
     $("sp-test").disabled = $("sp-check").disabled = !status.spoolman;
+    $("sr-conn").textContent = status.stockroom
+      ? "Linked items show \u201cIn stock\u201d on the storefront and kiosk."
+      : "Not set up. Set STOCKROOM_URL and INTEGRATION_KEY (the same key as in Stockroom) and redeploy.";
+    $("sr-test").disabled = !status.stockroom;
+    $("sr-hook").textContent = status.squareWebhook
+      ? "Completed Square payments take sold items off the shelf in Stockroom. Recent deliveries:"
+      : "Not set up. Add a Square webhook for payment.created and payment.updated pointing at /api/v1/webhooks/square, then set SQUARE_WEBHOOK_SIGNATURE_KEY and SQUARE_WEBHOOK_URL.";
+    loadSales();
     if (spInited) return;
     spInited = true;
     api("/spoolman/report").then(function(r){ if (r.report) renderInventory(r.report); });
   }
+  function loadSales(){
+    api("/stockroom/sales").then(function(r){
+      var list = r.recent || [];
+      $("sr-sales").innerHTML = list.length ? list.map(function(e){
+        var when = new Date(e.at).toLocaleString();
+        var what = e.lines ? e.lines.map(function(l){
+          return esc((l.qty ? l.qty + "\u00d7 " : "") + (l.name || l.slug || "item")) + ' <span class="muted">' + esc(l.result) + '</span>';
+        }).join("; ") : '<span class="muted">' + esc(e.result || "") + '</span>';
+        return '<li><small class="muted">' + esc(when) + (e.order ? " \u00b7 " + esc(e.order) : "") + '</small><br>' + (what || '<span class="muted">nothing from the catalog</span>') + '</li>';
+      }).join("") : '<li class="muted">None since the app last started.</li>';
+    }).catch(function(){});
+  }
+  $("sr-refresh").addEventListener("click", loadSales);
+  $("sr-test").addEventListener("click", function(){
+    setStatus($("sr-conn-status"), "Connecting to Stockroom…");
+    api("/stockroom/test").then(function(r){
+      setStatus($("sr-conn-status"), "Connected \u2014 " + r.linked + " item" + (r.linked === 1 ? "" : "s") + " linked to designs.", "ok");
+    }).catch(function(e){ setStatus($("sr-conn-status"), e.message, "bad"); });
+  });
   $("sp-test").addEventListener("click", function(){
     setStatus($("sp-conn-status"), "Connecting to Spoolman…");
     api("/spoolman/test").then(function(r){

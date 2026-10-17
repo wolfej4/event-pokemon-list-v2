@@ -323,7 +323,14 @@ async function deleteItems(ids) {
   for (let i = 0; i < ids.length; i += 200) await call("POST", "/v2/catalog/batch-delete", { object_ids: ids.slice(i, i + 200) });
 }
 
+// One order with its line items (needs ORDERS_READ). The sales webhook uses it
+// to see which catalog items were sold.
+async function getOrder(id) {
+  return (await call("GET", "/v2/orders/" + encodeURIComponent(id))).order || null;
+}
+
 module.exports = {
+  getOrder,
   envName, isSandbox, configured, config, testConnection, upsertItem, uploadImage, listAppItems, deleteItems, describe,
   listCategories, ensureCategories, ensureCustomAttributeDefinitions
 };

@@ -23,6 +23,8 @@ if (!secret) {
 const app = express();
 app.disable("x-powered-by");
 app.set("trust proxy", 1);
+// before express.json: the Square webhook needs the raw body to check its signature
+app.use("/api/v1", require("./src/routes/integration"));
 app.use(express.json({ limit: "200kb" }));
 app.use((req, res, next) => {
   res.setHeader("X-Content-Type-Options", "nosniff");
