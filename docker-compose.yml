@@ -23,6 +23,11 @@ services:
       SQUARE_ENV: ${SQUARE_ENV:-production}
       # Spoolman (optional): your instance's base URL, no trailing slash
       SPOOLMAN_URL: ${SPOOLMAN_URL}
+      # Stockroom (optional): stock badges and Square sales. See README → Stockroom link.
+      STOCKROOM_URL: ${STOCKROOM_URL:-}
+      INTEGRATION_KEY: ${INTEGRATION_KEY:-}
+      SQUARE_WEBHOOK_URL: ${SQUARE_WEBHOOK_URL:-}
+      SQUARE_WEBHOOK_SIGNATURE_KEY: ${SQUARE_WEBHOOK_SIGNATURE_KEY:-}
     volumes:
       - n3d_catalog_data:/app/data
 

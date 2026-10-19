@@ -120,6 +120,21 @@
     return esc(d.price);
   }
 
+  // ---------- stock (from Stockroom; d.stock is null for designs it doesn't track) ----------
+  function stockBadge(d){
+    var st = d.stock; if (!st) return "";
+    if (st.regular > 0) return '<span class="stock in">In stock</span>';
+    if (st.shiny > 0) return '<span class="stock in">Shiny in stock</span>';
+    return '<span class="stock">Made to order</span>';
+  }
+  function stockLine(d){
+    var st = d.stock; if (!st) return "";
+    var parts = [];
+    if ("regular" in st) parts.push(st.regular > 0 ? '<b class="in">' + st.regular + ' in stock</b>' : "Made to order");
+    if ("shiny" in st) parts.push("Shiny: " + (st.shiny > 0 ? '<b class="in">' + st.shiny + ' in stock</b>' : "made to order"));
+    return '<p class="avail">' + parts.join(" \u00b7 ") + '</p>';
+  }
+
   function render(){
     var list = designs.filter(matches).sort(SORTS[sortBy] || byName);
     shown = list.map(function(d){ return d.slug; });
@@ -134,7 +149,7 @@
         (d.is_extra ? '<span class="tag">Limited</span>' : '') + '</div>' + spool(d) +
         '<div class="card-body"><div class="card-title">' + esc(d.title) + '</div>' +
         '<div class="card-meta">' + esc(meta) + '</div>' +
-        '<div class="card-foot"><span class="price">' + priceHtml(d) + '</span></div>' +
+        '<div class="card-foot"><span class="price">' + priceHtml(d) + '</span>' + stockBadge(d) + '</div>' +
         evoStrip(d) +
         '</div></article>';
     }).join("");
@@ -229,6 +244,7 @@
     h += '<dl class="specs"><div><dt>Price</dt><dd>' + priceHtml(d) + '</dd></div>' +
       '<div><dt>Print time</dt><dd>' + esc(d.print_time || "\u2014") + '</dd></div>' +
       '<div><dt>Weight</dt><dd>' + (d.total_weight_grams ? Math.round(d.total_weight_grams) + " g" : "\u2014") + '</dd></div></dl>';
+    h += stockLine(d);
     if (d.filaments && d.filaments.length){
       h += '<ul class="filaments">' + d.filaments.map(function(f){
         return '<li><span class="swatch" style="background:' + safeColor(f.hex_color) + '"></span>' + esc(f.color) +
@@ -283,6 +299,25 @@
     touch = null;
     if (quick && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) step(dx < 0 ? 1 : -1);
   }, { passive: true });
+
+  // ---------- kiosk: keep the stock badges current through a long event day ----------
+  if (kiosk){
+    setInterval(function(){
+      if (document.hidden || !designs.length) return;
+      fetch("/api/public/stock", { cache: "no-store" }).then(function(r){ return r.json(); }).then(function(j){
+        var stock = j && j.stock, changed = false;
+        designs.forEach(function(d){
+          var next = stock ? (stock[d.slug] || null) : null;
+          if (JSON.stringify(next) !== JSON.stringify(d.stock)) { d.stock = next; changed = true; }
+        });
+        if (changed) {
+          render();
+          var open = !$("detail").hidden && $("detail-body").querySelector(".avail");
+          if (open && bySlug[currentSlug]) open.outerHTML = stockLine(bySlug[currentSlug]) || '<p class="avail" hidden></p>';
+        }
+      }).catch(function(){});
+    }, 60 * 1000);
+  }
 
   // ---------- kiosk idle reset ----------
   if (kiosk){

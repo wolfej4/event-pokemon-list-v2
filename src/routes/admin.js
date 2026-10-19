@@ -7,7 +7,7 @@ const square = require("../squareClient");
 const spoolman = require("../spoolmanClient");
 const { buildColorReport } = require("../inventory");
 const mailer = require("../mailer");
-const { formulaCents, unitCents, fmt } = require("../pricing");
+const { formulaCents, unitCents, shinyCents, fmt } = require("../pricing");
 const { buildQuotePdf } = require("../pdf");
 const { checkPassword, requireAdmin } = require("../auth");
 const rateLimit = require("../rateLimit");
@@ -15,6 +15,8 @@ const logo = require("../logo");
 const enrich = require("../enrich");
 const photos = require("../photos");
 const catalog = require("../squareCatalog");
+const { SQ_FIELDS, squareIdsFor } = require("../squareIds");
+const stockroom = require("../stockroomClient");
 
 const router = express.Router();
 
@@ -43,21 +45,14 @@ router.get("/status", (req, res) => {
     squareTokenSource: square.config().source,
     squareEnv: square.isSandbox() ? "sandbox" : "production",
     spoolman: spoolman.configured(),
+    stockroom: stockroom.configured(),
+    squareWebhook: !!process.env.SQUARE_WEBHOOK_SIGNATURE_KEY,
     storageError: db.writeError(),
     enrich: enrich.state
   });
 });
 
 // ---------- designs ----------
-// Square IDs are kept per environment so testing in sandbox never overwrites
-// (and later duplicates) the items in the live catalog. Designs pushed before
-// this existed only have top-level IDs, and those were always production.
-const SQ_FIELDS = ["square_item_id", "square_variation_id", "square_variation_id_shiny", "square_image_src", "square_image_ok", "square_pushed_at"];
-function squareIdsFor(d, env) {
-  if (d.square_by_env) return d.square_by_env[env] || {};
-  if (env === "production" && d.square_item_id) { const o = {}; SQ_FIELDS.forEach(k => { o[k] = d[k]; }); return o; }
-  return {};
-}
 function toAdmin(d, s) {
   const ids = squareIdsFor(d, square.envName());
   const current = {}; SQ_FIELDS.forEach(k => { current[k] = ids[k] || null; });
@@ -349,6 +344,13 @@ router.post("/spoolman/check", async (req, res) => {
 });
 router.get("/spoolman/report", (req, res) => res.json({ report: lastInventoryReport }));
 
+// ---------- Stockroom ----------
+router.get("/stockroom/test", async (req, res) => {
+  try { res.json(Object.assign({ ok: true }, await stockroom.testConnection())); }
+  catch (e) { res.status(422).json({ ok: false, error: e.message }); }
+});
+router.get("/stockroom/sales", (req, res) => res.json({ recent: require("./integration").recent }));
+
 // ---------- Square ----------
 router.post("/square-token", (req, res) => {
   const b = req.body || {};
@@ -385,7 +387,7 @@ async function pushOne(slug) {
   const sku = dex ? String(dex) : null;
   // every Pokémon design also offers a Shiny variation at an upcharge; plain
   // balls and anything without a Pokémon don't get one
-  const shinyPriceCents = d.pokemon ? priceCents + Math.round((Number(s.pricing.shinyUpcharge) || 0) * 100) : null;
+  const shinyPriceCents = shinyCents(d, s.pricing);
 
   // Categories/attributes are set up separately from the core item push, so a
   // hiccup here (permissions, an unsupported Square API version) doesn't

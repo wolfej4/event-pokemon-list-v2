@@ -52,6 +52,10 @@ main{ max-width:1200px; margin:0 auto; padding:8px clamp(16px, 4vw, 40px) 60px; 
 .card-meta{ color:var(--faint); font-size:.82rem; }
 .card-foot{ margin-top:auto; display:flex; align-items:center; justify-content:space-between; gap:8px; padding-top:6px; }
 .price{ font-weight:700; font-size:1.02rem; }
+.stock{ font-size:.74rem; font-weight:600; padding:2px 8px; border-radius:99px; border:1px solid var(--line); color:var(--faint); white-space:nowrap; }
+.stock.in{ color:var(--ok); border-color:currentColor; }
+.avail{ margin:10px 0 0; font-size:.88rem; color:var(--muted); }
+.avail .in{ color:var(--ok); }
 .price small{ color:var(--faint); font-weight:400; font-size:.75rem; margin-left:3px; }
 
 .empty{ text-align:center; padding:60px 20px; color:var(--muted); }

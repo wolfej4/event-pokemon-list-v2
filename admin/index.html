@@ -188,6 +188,21 @@
         </form>
       </div>
 
+      <div class="split" style="margin-top:16px">
+        <div class="panel">
+          <h3>Stockroom</h3>
+          <p class="sub" id="sr-conn">Checking…</p>
+          <button class="btn" id="sr-test" type="button">Test connection</button>
+          <div class="status" id="sr-conn-status"></div>
+        </div>
+        <div class="panel">
+          <h3>Square sales → Stockroom</h3>
+          <p class="sub" id="sr-hook">Checking…</p>
+          <ul class="sr-sales" id="sr-sales"></ul>
+          <button class="btn" id="sr-refresh" type="button">Refresh</button>
+        </div>
+      </div>
+
       <div class="head" style="margin-top:22px">
         <div><h3 style="margin:0">Shopping list</h3><p class="sub" id="sp-summary">Run a check to see what to buy.</p></div>
         <button class="btn primary" id="sp-check" type="button">Check stock now</button>
