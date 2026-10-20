@@ -37,6 +37,8 @@ router.use(requireAdmin);
 // ---------- status ----------
 router.get("/status", (req, res) => {
   res.json({
+    version: version.version,
+    buildSha: version.sha,
     n3dKey: n3d.configured(),
     n3dKeySource: n3d.config().source,
     smtp: mailer.configured(),
@@ -87,6 +89,14 @@ router.post("/designs/:slug", (req, res) => {
     const url = String(b.shop_url || "").trim();
     if (url && !/^https?:\/\//i.test(url)) return res.status(400).json({ error: "Shop link must start with http:// or https://" });
     u.shop_url = url || null;
+  }
+  if ("large_price" in b) {
+    if (b.large_price === "" || b.large_price === null) u.large_price_cents = null;
+    else {
+      const n = Number(b.large_price);
+      if (!Number.isFinite(n) || n < 0 || n > 100000) return res.status(400).json({ error: "Large price must be a positive number." });
+      u.large_price_cents = Math.round(n * 100);
+    }
   }
   if ("visible" in b) u.visible = !!b.visible;
   // null out explicitly (upsert skips undefined, not null)
@@ -203,13 +213,23 @@ router.post("/sync", async (req, res) => {
   syncing = true;
   const full = !!(req.body && req.body.full);
   try {
-    let added = 0, updated = 0;
+    let added = 0, updated = 0, noImage = 0, samplePage = null;
     const result = await n3d.syncCatalog({
       since: full ? null : db.getSettings().lastCursor,
       onPage: async (designs) => {
+        // N3D's docs say image_url is always a populated string; if that's
+        // ever not true for a whole page, log one raw example so it's easy
+        // to tell "N3D didn't send it" from "we dropped it somewhere".
+        if (!samplePage && designs.length) {
+          samplePage = designs[0];
+          if (designs.some(d => d && d.slug && !d.image_url)) {
+            console.warn("[sync] a design came back with no image_url; example:", JSON.stringify(samplePage));
+          }
+        }
         for (const d of designs) {
           if (!d || !d.slug) continue;
           const isNew = !db.getDesign(d.slug);
+          if (!d.image_url) noImage++;
           db.upsertDesign(d.slug, {
             title: d.title, category: d.category, image_url: d.image_url,
             print_time: d.print_time, total_weight_grams: d.total_weight_grams,
@@ -230,7 +250,7 @@ router.post("/sync", async (req, res) => {
     });
     if (result.cursor) db.updateSettings({ lastCursor: result.cursor });
     enrich.run(); // sprites and evolution families, in the background
-    res.json({ ok: true, added, updated, seen: result.total });
+    res.json({ ok: true, added, updated, seen: result.total, noImage });
   } catch (e) {
     res.status(e.isAuth ? 502 : 500).json({ error: e.message || "Sync failed." });
   } finally {
@@ -408,7 +428,7 @@ async function pushOne(slug) {
     item = await square.upsertItem(Object.assign({}, d, { square_item_id: ids.square_item_id || null }), priceCents, {
       currency: s.currency, overwritePrice: s.squareOverwritePrices,
       categories: catFields.categories, reportingCategory: catFields.reporting_category,
-      customAttributeValues: customAttrs, shinyPriceCents, sku
+      customAttributeValues: customAttrs, shinyPriceCents, largePriceCents, sku
     });
   } catch (e) {
     console.error("[square] push failed for " + slug + ":", e.message);

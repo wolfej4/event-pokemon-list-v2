@@ -50,7 +50,7 @@
   function boot(){
     Promise.all([api("/settings"), api("/status")]).then(function(r){
       settings = r[0]; status = r[1];
-      fillSettings(); fillSmtp(); fillN3dKey(); fillSquareToken(); fillPricing(); renderConn(); renderLogos(); renderStorageAlert();
+      fillSettings(); fillSmtp(); fillN3dKey(); fillSquareToken(); fillPricing(); renderConn(); renderLogos(); renderStorageAlert(); fillVersion();
       startOrderWatch();
       var tab = location.hash.slice(1) === "orders" ? "quotes" : location.hash.slice(1);
       var tabBtn = tab && document.querySelector('.tabs [data-tab="' + tab.replace(/[^a-z]/g, "") + '"]');
@@ -98,6 +98,8 @@
         '<td class="muted">' + money(d.formula_cents) + '</td>' +
         '<td><input class="input price-in" type="number" min="0" step="0.01" placeholder="Formula" aria-label="Custom price" value="' +
           (d.price_cents != null ? (d.price_cents/100).toFixed(2) : "") + '"></td>' +
+        '<td><input class="input large-in" type="number" min="0" step="0.01" placeholder="Not offered" aria-label="Large price" value="' +
+          (d.large_price_cents != null ? (d.large_price_cents/100).toFixed(2) : "") + '"></td>' +
         '<td><input class="input url-in" type="url" placeholder="https://" aria-label="Shop link" value="' + esc(d.shop_url || "") + '"></td>' +
         '<td><input type="checkbox" class="vis" aria-label="Visible on store"' + (d.visible !== false ? " checked" : "") + '></td>' +
         '<td>' + squareCell(d) + '</td>' +
@@ -119,13 +121,14 @@
     if (btn.hasAttribute("data-save")) {
       p = api("/designs/" + encodeURIComponent(slug), { method:"POST", body:{
         price: tr.querySelector(".price-in").value,
+        large_price: tr.querySelector(".large-in").value,
         shop_url: tr.querySelector(".url-in").value,
         visible: tr.querySelector(".vis").checked
       }}).then(function(r){ replaceDesign(r.data); tr.classList.toggle("off", r.data.visible === false); note.textContent = "Saved"; });
     } else {
       note.textContent = "Pushing…";
       p = api("/square/push/" + encodeURIComponent(slug), { method:"POST" })
-        .then(function(r){ replaceDesign(r.data); tr.children[6].innerHTML = squareCell(r.data); note.textContent = "Pushed"; });
+        .then(function(r){ replaceDesign(r.data); tr.children[7].innerHTML = squareCell(r.data); note.textContent = "Pushed"; });
     }
     p.catch(function(err){ note.style.color = "var(--bad)"; note.textContent = err.message; if (btn.hasAttribute("data-push")) loadDesigns(); })
      .finally(function(){ btn.disabled = false; setTimeout(function(){ if (note.textContent === "Saved" || note.textContent === "Pushed") note.textContent = ""; }, 2000); });
@@ -136,7 +139,12 @@
     $("sync").disabled = $("full-sync").disabled = true;
     setStatus(el, full ? "Pulling the full catalog from N3D…" : "Checking N3D for new and changed designs…");
     api("/sync", { method:"POST", body:{ full: full } })
-      .then(function(r){ setStatus(el, "Sync finished: " + r.added + " new, " + r.updated + " updated. Sprites and evolution families update in the background over the next minute.", "ok"); return api("/settings"); })
+      .then(function(r){
+        var msg = "Sync finished: " + r.added + " new, " + r.updated + " updated. Sprites and evolution families update in the background over the next minute.";
+        if (r.noImage) msg += " " + r.noImage + " of " + r.seen + " designs came back from N3D with no photo (check the container log for a sample if that's unexpected).";
+        setStatus(el, msg, r.noImage && r.noImage === r.seen ? "bad" : "ok");
+        return api("/settings");
+      })
       .then(function(s){ settings = s; return loadDesigns(); })
       .catch(function(e){ setStatus(el, "Sync failed: " + e.message, "bad"); })
       .finally(function(){ $("sync").disabled = $("full-sync").disabled = false; });
@@ -281,7 +289,14 @@
       : status.smtp ? "Currently using the SMTP_* environment variables. Save settings here to replace them."
       : "Not set up yet. Orders are still saved, but no emails go out.";
   }
-  function refreshStatus(){ return api("/status").then(function(s){ status = s; renderConn(); fillSmtp(); fillN3dKey(); fillSquareToken(); }); }
+  function fillVersion(){
+    var el = $("bar-version");
+    if (!status.version) { el.hidden = true; return; }
+    el.hidden = false;
+    el.textContent = "v" + status.version + (status.buildSha ? " (" + status.buildSha + ")" : "");
+    el.title = "Running version" + (status.buildSha ? " — build " + status.buildSha : "");
+  }
+  function refreshStatus(){ return api("/status").then(function(s){ status = s; renderConn(); fillSmtp(); fillN3dKey(); fillSquareToken(); fillVersion(); }); }
   $("smtp-form").addEventListener("submit", function(e){
     e.preventDefault();
     var body = { host: $("smtp-host").value, port: $("smtp-port").value || 587, secure: $("smtp-secure").value,

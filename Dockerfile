@@ -1,6 +1,10 @@
 FROM node:20-alpine
 WORKDIR /app
 ENV NODE_ENV=production
+# set by the build (see .github/workflows/docker-publish.yml) so a running
+# container can show which commit it was built from
+ARG GIT_SHA=dev
+ENV GIT_SHA=$GIT_SHA
 RUN apk add --no-cache su-exec
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev && npm cache clean --force

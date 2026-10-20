@@ -54,6 +54,7 @@ function toPublic(d, s, have, stock) {
     price_cents: cents,
     price: fmt(cents, s.currency),
     price_is_estimate: d.price_cents == null,
+    large_price: d.large_price_cents != null ? fmt(d.large_price_cents, s.currency) : null,
     shop_url: d.shop_url || null,
     stock: stockFor(d, stock),
     // our cached copy, or N3D's public sprite link until the cache catches up

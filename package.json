@@ -1,6 +1,6 @@
 {
   "name": "n3d-catalog",
-  "version": "2.0.0",
+  "version": "2.1.0",
   "private": true,
   "description": "Customer-facing N3D design catalog with quotes, admin pricing, N3D sync and Square push.",
   "main": "server.js",
