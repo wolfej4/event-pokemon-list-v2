@@ -99,3 +99,5 @@ label.btn{ cursor:pointer; }
 .match-cell .swatch-sm{ width:16px; height:16px; border-radius:5px; border:1px solid var(--line); flex:none; display:inline-block; }
 .designs-cell{ max-width:220px; color:var(--muted); font-size:.82rem; }
 .err-note{ color:var(--bad); max-width:230px; margin-top:3px; }
+.sr-sales{ list-style:none; margin:8px 0 12px; padding:0; max-height:260px; overflow:auto; font-size:.86rem; }
+.sr-sales li{ padding:6px 0; border-top:1px solid var(--line); }

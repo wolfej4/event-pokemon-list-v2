@@ -5,7 +5,7 @@
 // pricing, sync status) should always come from the network, never a stale
 // cached copy of something behind a login.
 
-const CACHE_NAME = "n3d-admin-shell-v2";
+const CACHE_NAME = "n3d-admin-shell-v3";
 const APP_SHELL = [
   "/admin",
   "/admin/assets/admin.css",

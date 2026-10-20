@@ -8,6 +8,7 @@ const logo = require("../logo");
 const sprites = require("../sprites");
 const photos = require("../photos");
 const evolutions = require("../evolutions");
+const stockroom = require("../stockroomClient");
 
 const router = express.Router();
 
@@ -29,7 +30,14 @@ function familyFor(d, have) {
   return count > 1 ? forest : null;
 }
 
-function toPublic(d, s, have) {
+// On-hand counts from Stockroom for one design: { regular: n, shiny: n } with
+// only the versions linked there, or null when this design isn't tracked (or
+// Stockroom isn't set up or can't be reached).
+function stockFor(d, stock) {
+  return (stock && stock[d.slug]) || null;
+}
+
+function toPublic(d, s, have, stock) {
   const cents = unitCents(d, s.pricing);
   return {
     slug: d.slug,
@@ -40,11 +48,15 @@ function toPublic(d, s, have) {
     print_time: d.print_time,
     total_weight_grams: d.total_weight_grams,
     is_extra: !!d.purchase_only,
+    // for "Newest/Oldest first": N3D's creation date, else when we first synced it
+    // (designs synced before added_at existed fall back to N3D's last update)
+    added_at: d.created_at || d.added_at || d.updated_at || null,
     price_cents: cents,
     price: fmt(cents, s.currency),
     price_is_estimate: d.price_cents == null,
     large_price: d.large_price_cents != null ? fmt(d.large_price_cents, s.currency) : null,
     shop_url: d.shop_url || null,
+    stock: stockFor(d, stock),
     // our cached copy, or N3D's public sprite link until the cache catches up
     sprite: sprites.urlFor(d) || d.sprite_url || null,
     family: have ? familyFor(d, have) : null,
@@ -77,7 +89,8 @@ router.get("/logo/:variant", (req, res) => {
   res.send(f.buf);
 });
 
-router.get("/designs", (req, res) => {
+router.get("/designs", async (req, res) => {
+  const stock = await stockroom.stockMap();
   const s = db.getSettings();
   const byTitle = (a, b) => (a.title || "").localeCompare(b.title || "", undefined, { numeric: true });
   const visible = db.allDesigns().filter(d => d.visible !== false).sort(byTitle);
@@ -87,8 +100,19 @@ router.get("/designs", (req, res) => {
     const n = d.pokemon && d.pokemon.pokedex_number;
     if (n && !have[n]) have[n] = d.slug;
   }
-  const list = visible.map(d => toPublic(d, s, have));
+  const list = visible.map(d => toPublic(d, s, have, stock));
   res.json({ data: list });
+});
+
+// Just the shelf counts, so a kiosk left open all day can refresh its "In
+// stock" badges without reloading every design.
+router.get("/stock", async (req, res) => {
+  res.setHeader("Cache-Control", "no-store");
+  const all = await stockroom.stockMap();
+  if (!all) return res.json({ stock: null });
+  const stock = {};
+  for (const d of db.allDesigns()) if (d.visible !== false && all[d.slug]) stock[d.slug] = all[d.slug];
+  res.json({ stock });
 });
 
 // the order's secret token (from the link in its email) unlocks its PDF

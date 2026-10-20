@@ -89,9 +89,15 @@ panel for pricing, N3D sync, and pushing to Square. Light and dark mode on both.
   the store header, admin bar, and on order PDFs (PNG/JPG only for
   the PDF). Stored on the data volume, so no rebuild is needed to change it.
 
+- **Stockroom:** if `STOCKROOM_URL` and `INTEGRATION_KEY` are set, designs linked to
+  an item in [Voxelwaves Stockroom](https://github.com/wolfej4/voxelwaves-stockroom)
+  show **In stock** (or **Made to order** at 0) on their card, and the design view
+  shows the count for the Regular and Shiny versions. See *Stockroom link* below.
+
 **Kiosk mode** for a booth tablet: open `/?kiosk=1` once on that device. Hides
 outside shop links, uses bigger buttons, and clears everything after the idle
-timeout. `/?kiosk=0` turns it off.
+timeout. `/?kiosk=0` turns it off. With Stockroom linked, the kiosk refreshes its stock badges
+every minute, so a sale rung up in Square shows within about a minute.
 
 ## Deploy in Portainer
 
@@ -119,6 +125,36 @@ Behind HTTPS (Nginx Proxy Manager, Traefik, Cloudflare Tunnel), set
    package public under GitHub → Packages → Package settings.
 4. To update later: push to GitHub, wait for the build, then click Update in Dockge.
 
+## Stockroom link
+
+Stockroom owns the shelf count; this app owns designs and prices. They share one
+secret.
+
+1. Pick a long random secret (`openssl rand -hex 32`) and set `INTEGRATION_KEY` to it
+   in **both** stacks.
+2. Here, set `STOCKROOM_URL` to how this container reaches Stockroom on the LAN
+   (e.g. `http://192.168.1.20:8085`), not through Pangolin/Pocket ID. In
+   Stockroom, set `CATALOG_URL` to how it reaches this app.
+3. In Stockroom, open each finished print under **Items** and pick its catalog
+   design and version (Regular or Shiny).
+4. **Square sales** (optional): in the Square Developer Console → your app →
+   Webhooks, add a subscription for `payment.created` and `payment.updated`
+   pointing at `https://<your public catalog address>/api/v1/webhooks/square`.
+   Set `SQUARE_WEBHOOK_URL` to that exact URL and `SQUARE_WEBHOOK_SIGNATURE_KEY` to
+   the signature key Square shows, then redeploy. The access token also needs
+   `ORDERS_READ`. If the catalog sits behind an auth proxy, let
+   `/api/v1/webhooks/square` through without a login (Square signs every request).
+
+When a payment completes, each line of the order that's a pushed design takes
+that many off the linked Stockroom item. Square resends events and an order can
+have several payments; each line still only comes off once. If Stockroom can't
+be reached, the webhook answers 500 so Square tries again later. **Inventory →
+Square sales → Stockroom** in admin lists the last 25 deliveries and what
+happened to each line. Refunds aren't added back automatically.
+
+Stockroom reads `GET /api/v1/designs` (header `X-API-Key: <INTEGRATION_KEY>`) for
+the link picker and copies prices onto linked items hourly.
+
 ## Notes
 
 - The container starts as root only long enough to make `/app/data` owned by the
@@ -142,5 +178,5 @@ Behind HTTPS (Nginx Proxy Manager, Traefik, Cloudflare Tunnel), set
   environment variable. `SQUARE_ENV`/`SQUARE_ENVIRONMENT` (sandbox vs.
   production) is still only an environment variable.
 - Square token scopes: `ITEMS_READ`, `ITEMS_WRITE`, and `MERCHANT_PROFILE_READ`
-  (for the connection test).
+  (for the connection test), plus `ORDERS_READ` for the sales webhook.
 - Admin logins are in memory, so a container restart logs you out. Nothing else is lost.

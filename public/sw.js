@@ -4,7 +4,7 @@
 // as they're fetched (network-first, falling back to cache when offline),
 // and design images are cached opportunistically the first time they load.
 
-const CACHE_NAME = "n3d-catalog-v3";
+const CACHE_NAME = "n3d-catalog-v5";
 const APP_SHELL = [
   "/",
   "/assets/theme.css",
@@ -38,6 +38,8 @@ self.addEventListener("fetch", (event) => {
   if (req.method !== "GET") return; // never intercept POSTs (quote submissions etc.)
 
   const url = new URL(req.url);
+  // live shelf counts: always straight from the network, never from a cache
+  if (url.origin === self.location.origin && url.pathname === "/api/public/stock") return;
   const isApi = url.origin === self.location.origin && API_PATHS.some((p) => url.pathname === p);
   const isAppShell = url.origin === self.location.origin &&
     (APP_SHELL.includes(url.pathname) || url.pathname === "/index.html");

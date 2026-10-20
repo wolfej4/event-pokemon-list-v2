@@ -26,7 +26,10 @@ body{ padding-bottom:env(safe-area-inset-bottom); }
 .chip.active{ background:var(--ink); color:var(--bg); border-color:var(--ink); }
 
 main{ max-width:1200px; margin:0 auto; padding:8px clamp(16px, 4vw, 40px) 60px; }
-.result-count{ color:var(--faint); font-size:.88rem; margin:6px 0 16px; }
+.list-bar{ display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; margin:6px 0 16px; }
+.result-count{ color:var(--faint); font-size:.88rem; margin:0; }
+.sort{ display:flex; align-items:center; gap:8px; color:var(--muted); font-size:.88rem; font-weight:700; }
+.sort .input{ width:auto; padding:7px 10px; font-size:.88rem; cursor:pointer; }
 .grid{ display:grid; grid-template-columns:repeat(auto-fill, minmax(210px, 1fr)); gap:18px; }
 
 .card{
@@ -49,6 +52,10 @@ main{ max-width:1200px; margin:0 auto; padding:8px clamp(16px, 4vw, 40px) 60px; 
 .card-meta{ color:var(--faint); font-size:.82rem; }
 .card-foot{ margin-top:auto; display:flex; align-items:center; justify-content:space-between; gap:8px; padding-top:6px; }
 .price{ font-weight:700; font-size:1.02rem; }
+.stock{ font-size:.74rem; font-weight:600; padding:2px 8px; border-radius:99px; border:1px solid var(--line); color:var(--faint); white-space:nowrap; }
+.stock.in{ color:var(--ok); border-color:currentColor; }
+.avail{ margin:10px 0 0; font-size:.88rem; color:var(--muted); }
+.avail .in{ color:var(--ok); }
 .price small{ color:var(--faint); font-weight:400; font-size:.75rem; margin-left:3px; }
 .large-pill{
   padding:3px 9px; border-radius:999px; background:var(--raised); color:var(--muted);
@@ -116,6 +123,7 @@ main{ max-width:1200px; margin:0 auto; padding:8px clamp(16px, 4vw, 40px) 60px; 
 /* kiosk mode: bigger targets, no leaving the app */
 body.kiosk .card-title{ font-size:1.12rem; }
 body.kiosk .chip{ padding:10px 16px; font-size:.98rem; }
+body.kiosk .sort .input{ padding:10px 14px; font-size:.98rem; }
 body.kiosk .grid{ grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); }
 body.kiosk .site-footer{ display:none; }
 

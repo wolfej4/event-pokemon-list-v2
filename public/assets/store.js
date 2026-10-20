@@ -3,7 +3,7 @@
   var $ = function(id){ return document.getElementById(id); };
   var KIOSK_KEY = "n3dcat-kiosk";
 
-  var designs = [], bySlug = {}, settings = {}, filter = { cat:"all", q:"" };
+  var designs = [], bySlug = {}, settings = {}, filter = { cat:"all", q:"" }, sortBy = "az";
   var lastFocus = null;
   var shown = [], currentSlug = null; // grid order, for stepping through designs in the detail view
 
@@ -75,6 +75,7 @@
     filter.cat = b.dataset.cat; render();
   });
   $("clear-filters").addEventListener("click", function(){ $("search").value = ""; filter.q = ""; render(); });
+  $("sort").addEventListener("change", function(e){ sortBy = e.target.value; render(); });
 
   function matches(d){
     if (filter.cat !== "all" && d.category !== filter.cat) return false;
@@ -83,6 +84,28 @@
     var hay = [d.title, d.slug, p.name, p.pokedex_number, (p.types || []).join(" ")].join(" ").toLowerCase();
     return filter.q.split(/\s+/).every(function(w){ return hay.indexOf(w) !== -1; });
   }
+
+  // ---------- sort ----------
+  function byName(a, b){ return (a.title || "").localeCompare(b.title || "", undefined, { numeric:true, sensitivity:"base" }); }
+  function dexOf(d){ var n = Number(d.pokemon && d.pokemon.pokedex_number); return n > 0 ? n : Infinity; }
+  function timeOf(d){ var t = Date.parse(d.added_at || ""); return isNaN(t) ? null : t; }
+  function byTime(dir){ // undated designs go last either way
+    return function(a, b){
+      var ta = timeOf(a), tb = timeOf(b);
+      if (ta === tb) return byName(a, b);
+      if (ta === null) return 1;
+      if (tb === null) return -1;
+      return (ta - tb) * dir;
+    };
+  }
+  var SORTS = {
+    az: byName,
+    za: function(a, b){ return byName(b, a); },
+    // designs without a Pokémon go after the numbered ones
+    dex: function(a, b){ var na = dexOf(a), nb = dexOf(b); return na === nb ? byName(a, b) : (na < nb ? -1 : 1); },
+    newest: byTime(-1),
+    oldest: byTime(1)
+  };
 
   function spool(d){
     var f = (d.filaments || []).filter(function(x){ return x.weight_grams > 0; });
@@ -97,8 +120,23 @@
     return esc(d.price);
   }
 
+  // ---------- stock (from Stockroom; d.stock is null for designs it doesn't track) ----------
+  function stockBadge(d){
+    var st = d.stock; if (!st) return "";
+    if (st.regular > 0) return '<span class="stock in">In stock</span>';
+    if (st.shiny > 0) return '<span class="stock in">Shiny in stock</span>';
+    return '<span class="stock">Made to order</span>';
+  }
+  function stockLine(d){
+    var st = d.stock; if (!st) return "";
+    var parts = [];
+    if ("regular" in st) parts.push(st.regular > 0 ? '<b class="in">' + st.regular + ' in stock</b>' : "Made to order");
+    if ("shiny" in st) parts.push("Shiny: " + (st.shiny > 0 ? '<b class="in">' + st.shiny + ' in stock</b>' : "made to order"));
+    return '<p class="avail">' + parts.join(" \u00b7 ") + '</p>';
+  }
+
   function render(){
-    var list = designs.filter(matches);
+    var list = designs.filter(matches).sort(SORTS[sortBy] || byName);
     shown = list.map(function(d){ return d.slug; });
     $("result-count").textContent = list.length + (list.length === 1 ? " design" : " designs");
     $("empty").hidden = list.length > 0 || designs.length === 0;
@@ -111,8 +149,7 @@
         (d.is_extra ? '<span class="tag">Limited</span>' : '') + '</div>' + spool(d) +
         '<div class="card-body"><div class="card-title">' + esc(d.title) + '</div>' +
         '<div class="card-meta">' + esc(meta) + '</div>' +
-        '<div class="card-foot"><span class="price">' + priceHtml(d) + '</span>' +
-        (d.large_price ? '<span class="large-pill">Large ' + esc(d.large_price) + '</span>' : '') + '</div>' +
+        '<div class="card-foot"><span class="price">' + priceHtml(d) + '</span>' + stockBadge(d) + '</div>' +
         evoStrip(d) +
         '</div></article>';
     }).join("");
@@ -207,7 +244,7 @@
     h += '<dl class="specs"><div><dt>Price</dt><dd>' + priceHtml(d) + '</dd></div>' +
       '<div><dt>Print time</dt><dd>' + esc(d.print_time || "\u2014") + '</dd></div>' +
       '<div><dt>Weight</dt><dd>' + (d.total_weight_grams ? Math.round(d.total_weight_grams) + " g" : "\u2014") + '</dd></div></dl>';
-    if (d.large_price) h += '<p class="large-note">A large version is also available: <strong>' + esc(d.large_price) + '</strong></p>';
+    h += stockLine(d);
     if (d.filaments && d.filaments.length){
       h += '<ul class="filaments">' + d.filaments.map(function(f){
         return '<li><span class="swatch" style="background:' + safeColor(f.hex_color) + '"></span>' + esc(f.color) +
@@ -263,12 +300,32 @@
     if (quick && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) step(dx < 0 ? 1 : -1);
   }, { passive: true });
 
+  // ---------- kiosk: keep the stock badges current through a long event day ----------
+  if (kiosk){
+    setInterval(function(){
+      if (document.hidden || !designs.length) return;
+      fetch("/api/public/stock", { cache: "no-store" }).then(function(r){ return r.json(); }).then(function(j){
+        var stock = j && j.stock, changed = false;
+        designs.forEach(function(d){
+          var next = stock ? (stock[d.slug] || null) : null;
+          if (JSON.stringify(next) !== JSON.stringify(d.stock)) { d.stock = next; changed = true; }
+        });
+        if (changed) {
+          render();
+          var open = !$("detail").hidden && $("detail-body").querySelector(".avail");
+          if (open && bySlug[currentSlug]) open.outerHTML = stockLine(bySlug[currentSlug]) || '<p class="avail" hidden></p>';
+        }
+      }).catch(function(){});
+    }, 60 * 1000);
+  }
+
   // ---------- kiosk idle reset ----------
   if (kiosk){
     var idleTimer;
     var reset = function(){
       $("detail").hidden = true; document.body.style.overflow = "";
       $("search").value = ""; filter = { cat:"all", q:"" };
+      $("sort").value = sortBy = "az";
       [].forEach.call(document.querySelectorAll(".chip"), function(c){ c.classList.toggle("active", c.dataset.cat === "all"); });
       render(); window.scrollTo(0, 0);
     };
