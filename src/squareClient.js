@@ -222,18 +222,18 @@ async function uploadImage(itemId, imageSource, name) {
  * Create or update one design's item in Square (without the photo; see
  * uploadImage). `opts.categories`/`reportingCategory` come from
  * squareCatalog.categoriesFieldsFor; `customAttributeValues` from
- * squareCatalog.customAttributesFor. `shinyPriceCents`/`largePriceCents` each
- * add/update their own variation (null removes it — e.g. a design that no
+ * squareCatalog.customAttributesFor. `shinyPriceCents`/`largePriceCents`/
+ * `keychainPriceCents` each add/update their own variation (null removes it — e.g. a design that no
  * longer depicts a Pokémon loses Shiny, or Large is turned off in admin).
- * `sku` goes on the Regular variation (and "<sku>-SHINY"/"<sku>-LARGE" on
+ * `sku` goes on the Regular variation (and "<sku>-SHINY"/"-LARGE"/"-KEY" on
  * those, when offered); falsy clears it.
  * Returns { square_item_id, square_variation_id, square_variation_id_shiny,
- * square_variation_id_large, square_pushed_at, created }.
+ * square_variation_id_large, square_variation_id_keychain, square_pushed_at, created }.
  */
 async function upsertItem(d, priceCents, opts = {}) {
   const {
     currency = "USD", overwritePrice = true, categories, reportingCategory,
-    customAttributeValues, shinyPriceCents = null, largePriceCents = null, sku = null
+    customAttributeValues, shinyPriceCents = null, largePriceCents = null, keychainPriceCents = null, sku = null
   } = opts;
   const name = String(d.title || d.slug).slice(0, 255);
   let existing = null;
@@ -268,9 +268,11 @@ async function upsertItem(d, priceCents, opts = {}) {
   const itemRef = existing ? object.id : "#item"; // new variations need the real item id once one exists
   const isShiny = (v) => /shiny/i.test((v.item_variation_data || {}).name || "");
   const isLarge = (v) => /large/i.test((v.item_variation_data || {}).name || "");
+  const isKeychain = (v) => /keychain/i.test((v.item_variation_data || {}).name || "");
+  const isRegular = (v) => !isShiny(v) && !isLarge(v) && !isKeychain(v);
   const vars = object.item_data.variations || [];
 
-  let reg = vars.find(v => !isShiny(v) && !isLarge(v));
+  let reg = vars.find(isRegular);
   const regIsNew = !reg;
   if (regIsNew) {
     reg = { type: "ITEM_VARIATION", id: "#var", present_at_all_locations: true, item_variation_data: { item_id: itemRef, name: "Regular" } };
@@ -304,19 +306,34 @@ async function upsertItem(d, priceCents, opts = {}) {
   } else if (large) {
     vars.splice(vars.indexOf(large), 1); // turned off in admin
   }
+  // Keychain: the character's sprite printed flat with a ring (regular colors only)
+  let keychain = vars.find(isKeychain);
+  if (keychainPriceCents != null) {
+    const keychainIsNew = !keychain;
+    if (keychainIsNew) {
+      keychain = { type: "ITEM_VARIATION", id: "#varkeychain", present_at_all_locations: true, item_variation_data: { item_id: itemRef, name: "Keychain" } };
+      vars.push(keychain);
+    }
+    if (keychainIsNew || overwritePrice) setPrice(keychain.item_variation_data, keychainPriceCents, currency);
+    if (sku) keychain.item_variation_data.sku = sku + "-KEY"; else delete keychain.item_variation_data.sku;
+  } else if (keychain) {
+    vars.splice(vars.indexOf(keychain), 1); // keychains turned off (price cleared)
+  }
   object.item_data.variations = vars;
 
   const res = await call("POST", "/v2/catalog/object", { idempotency_key: crypto.randomUUID(), object });
   const saved = res.catalog_object;
   const savedVars = saved.item_data.variations || [];
-  const savedReg = savedVars.find(v => !isShiny(v) && !isLarge(v)) || savedVars[0];
+  const savedReg = savedVars.find(isRegular) || savedVars[0];
   const savedShiny = savedVars.find(isShiny);
   const savedLarge = savedVars.find(isLarge);
+  const savedKeychain = savedVars.find(isKeychain);
   return {
     square_item_id: saved.id,
     square_variation_id: savedReg && savedReg.id,
     square_variation_id_shiny: savedShiny ? savedShiny.id : null,
     square_variation_id_large: savedLarge ? savedLarge.id : null,
+    square_variation_id_keychain: savedKeychain ? savedKeychain.id : null,
     square_pushed_at: new Date().toISOString(),
     created: !existing
   };

@@ -2,7 +2,7 @@
 const express = require("express");
 const crypto = require("crypto");
 const db = require("../db");
-const { unitCents, fmt } = require("../pricing");
+const { unitCents, keychainCents, fmt } = require("../pricing");
 const { buildQuotePdf } = require("../pdf");
 const logo = require("../logo");
 const sprites = require("../sprites");
@@ -30,7 +30,7 @@ function familyFor(d, have) {
   return count > 1 ? forest : null;
 }
 
-// On-hand counts from Stockroom for one design: { regular: n, shiny: n } with
+// On-hand counts from Stockroom for one design: { regular: n, shiny: n, keychain: n } with
 // only the versions linked there, or null when this design isn't tracked (or
 // Stockroom isn't set up or can't be reached).
 function stockFor(d, stock) {
@@ -39,6 +39,7 @@ function stockFor(d, stock) {
 
 function toPublic(d, s, have, stock) {
   const cents = unitCents(d, s.pricing);
+  const kc = keychainCents(d, s.pricing);
   return {
     slug: d.slug,
     title: d.title,
@@ -56,6 +57,8 @@ function toPublic(d, s, have, stock) {
     price_is_estimate: d.price_cents == null,
     large_price: d.large_price_cents != null ? fmt(d.large_price_cents, s.currency) : null,
     shop_url: d.shop_url || null,
+    // the character's sprite printed flat with a ring; drawn from the sprite below
+    keychain: kc != null ? { price_cents: kc, price: fmt(kc, s.currency) } : null,
     stock: stockFor(d, stock),
     // our cached copy, or N3D's public sprite link until the cache catches up
     sprite: sprites.urlFor(d) || d.sprite_url || null,

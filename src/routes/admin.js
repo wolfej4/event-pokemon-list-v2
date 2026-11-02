@@ -7,10 +7,11 @@ const square = require("../squareClient");
 const spoolman = require("../spoolmanClient");
 const { buildColorReport } = require("../inventory");
 const mailer = require("../mailer");
-const { formulaCents, unitCents, shinyCents, fmt } = require("../pricing");
+const { formulaCents, unitCents, shinyCents, hasKeychain, keychainCents, fmt } = require("../pricing");
 const { buildQuotePdf } = require("../pdf");
 const { checkPassword, requireAdmin } = require("../auth");
 const rateLimit = require("../rateLimit");
+const version = require("../version");
 const logo = require("../logo");
 const enrich = require("../enrich");
 const photos = require("../photos");
@@ -61,7 +62,9 @@ function toAdmin(d, s) {
   return Object.assign({}, d, current, {
     image_url: photos.urlFor(d) || d.image_url,
     formula_cents: formulaCents(d, s.pricing),
-    effective_cents: unitCents(d, s.pricing)
+    effective_cents: unitCents(d, s.pricing),
+    has_keychain: hasKeychain(d),
+    keychain_effective_cents: keychainCents(d, s.pricing)
   });
 }
 
@@ -96,6 +99,14 @@ router.post("/designs/:slug", (req, res) => {
       const n = Number(b.large_price);
       if (!Number.isFinite(n) || n < 0 || n > 100000) return res.status(400).json({ error: "Large price must be a positive number." });
       u.large_price_cents = Math.round(n * 100);
+    }
+  }
+  if ("keychain_price" in b) {
+    if (b.keychain_price === "" || b.keychain_price === null) u.keychain_price_cents = null;
+    else {
+      const n = Number(b.keychain_price);
+      if (!Number.isFinite(n) || n < 0 || n > 100000) return res.status(400).json({ error: "Keychain price must be a positive number." });
+      u.keychain_price_cents = Math.round(n * 100);
     }
   }
   if ("visible" in b) u.visible = !!b.visible;
@@ -172,7 +183,7 @@ router.post("/settings", (req, res) => {
   }
   if (b.pricing) {
     u.pricing = {};
-    for (const k of ["baseFee", "perGram", "perHour", "markupPct", "minPrice", "roundTo", "shinyUpcharge"]) {
+    for (const k of ["baseFee", "perGram", "perHour", "markupPct", "minPrice", "roundTo", "shinyUpcharge", "keychainPrice"]) {
       if (b.pricing[k] === undefined) continue;
       const n = Number(b.pricing[k]);
       if (!Number.isFinite(n) || n < 0) return res.status(400).json({ error: `Pricing value "${k}" must be 0 or more.` });
@@ -408,6 +419,10 @@ async function pushOne(slug) {
   // every Pokémon design also offers a Shiny variation at an upcharge; plain
   // balls and anything without a Pokémon don't get one
   const shinyPriceCents = shinyCents(d, s.pricing);
+  // Large only when a Large price is set in admin; Keychain for every character
+  // design (sprite keychain, regular colors) while a keychain price is set
+  const largePriceCents = d.large_price_cents != null ? d.large_price_cents : null;
+  const keychainPriceCents = keychainCents(d, s.pricing);
 
   // Categories/attributes are set up separately from the core item push, so a
   // hiccup here (permissions, an unsupported Square API version) doesn't
@@ -428,7 +443,7 @@ async function pushOne(slug) {
     item = await square.upsertItem(Object.assign({}, d, { square_item_id: ids.square_item_id || null }), priceCents, {
       currency: s.currency, overwritePrice: s.squareOverwritePrices,
       categories: catFields.categories, reportingCategory: catFields.reporting_category,
-      customAttributeValues: customAttrs, shinyPriceCents, largePriceCents, sku
+      customAttributeValues: customAttrs, shinyPriceCents, largePriceCents, keychainPriceCents, sku
     });
   } catch (e) {
     console.error("[square] push failed for " + slug + ":", e.message);
