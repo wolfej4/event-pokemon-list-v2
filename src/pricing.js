@@ -39,17 +39,17 @@ function shinyCents(d, pricing) {
   return unitCents(d, pricing) + Math.round((Number(pricing.shinyUpcharge) || 0) * 100);
 }
 
-// Every Pokémon character design also comes as a keychain: its pixel sprite
-// printed flat with a ring, regular colors only (no Shiny keychain). One flat
-// price from settings, unless the design has its own keychain price. null when
-// the design has no keychain (plain balls, extras) or the price is blank,
-// which turns keychains off everywhere.
+// Every design also comes as a keychain: its pixel sprite printed flat with a
+// hoop, regular colors only (no Shiny keychain). One flat price from settings,
+// unless the design has its own keychain price. A design's own price of 0
+// means that design has no keychain; a blank or 0 price in settings turns
+// keychains off everywhere. null = no keychain.
 function hasKeychain(d) {
-  return !!(d && d.pokemon && d.category === "character");
+  return !!d;
 }
 function keychainCents(d, pricing) {
   if (!hasKeychain(d)) return null;
-  if (d.keychain_price_cents !== null && d.keychain_price_cents !== undefined) return d.keychain_price_cents;
+  if (d.keychain_price_cents !== null && d.keychain_price_cents !== undefined) return d.keychain_price_cents > 0 ? d.keychain_price_cents : null;
   const p = pricing && pricing.keychainPrice;
   if (p === null || p === undefined || p === "" || !(Number(p) > 0)) return null;
   return Math.round(Number(p) * 100);
