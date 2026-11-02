@@ -101,7 +101,7 @@
         '<td><input class="input large-in" type="number" min="0" step="0.01" placeholder="Not offered" aria-label="Large price" value="' +
           (d.large_price_cents != null ? (d.large_price_cents/100).toFixed(2) : "") + '"></td>' +
         '<td>' + (d.has_keychain
-          ? '<input class="input kc-in" type="number" min="0" step="0.01" aria-label="Keychain price" title="Blank uses the keychain price from Pricing" placeholder="' +
+          ? '<input class="input kc-in" type="number" min="0" step="0.01" aria-label="Keychain price" title="Blank uses the keychain price from Pricing. 0 = this design has no keychain." placeholder="' +
               (settings.pricing && Number(settings.pricing.keychainPrice) > 0 ? money(Math.round(settings.pricing.keychainPrice * 100)) : "Off") + '" value="' +
               (d.keychain_price_cents != null ? (d.keychain_price_cents/100).toFixed(2) : "") + '">'
           : '<span class="muted" title="Only character designs come as keychains">\u2014</span>') + '</td>' +
