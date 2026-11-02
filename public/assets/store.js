@@ -42,6 +42,9 @@
     settings = res[0] || {};
     designs = (res[1] && res[1].data) || [];
     designs.forEach(function(d){ bySlug[d.slug] = d; });
+    // keychains off (or none priced): no Keychains chip
+    var kcChip = document.querySelector('.chip[data-cat="keychain"]');
+    if (kcChip) kcChip.hidden = !designs.some(function(d){ return d.keychain; });
     var name = settings.businessName || "Design Catalog";
     document.title = name;
     $("brand").textContent = name;

@@ -93,7 +93,13 @@
             <div class="field"><label for="p-minPrice">Minimum price ($)</label><input id="p-minPrice" type="number" step="0.01" min="0"></div>
             <div class="field"><label for="p-roundTo">Round up to nearest ($, 0 = off)</label><input id="p-roundTo" type="number" step="0.25" min="0"></div>
             <div class="field"><label for="p-shinyUpcharge">Shiny version upcharge ($)</label><input id="p-shinyUpcharge" type="number" step="0.50" min="0"></div>
-            <div class="field"><label for="p-keychainPrice">Keychain price ($, 0 = off)</label><input id="p-keychainPrice" type="number" step="0.50" min="0"></div>
+          </div>
+          <h3 class="kc-head">Keychains</h3>
+          <p class="sub">Priced by the formula above. N3D doesn't list a keychain's filament or print time, so enter them from Bambu Studio. A price on the Designs tab still wins, and 0 there means that design has no keychain.</p>
+          <label class="check"><input type="checkbox" id="p-keychainsOn"> Offer keychains</label>
+          <div class="grid2">
+            <div class="field"><label for="p-keychainGrams">Keychain filament (g)</label><input id="p-keychainGrams" type="number" step="0.1" min="0"></div>
+            <div class="field"><label for="p-keychainMinutes">Keychain print time (minutes)</label><input id="p-keychainMinutes" type="number" step="1" min="0"></div>
           </div>
           <button class="btn primary" type="submit">Save pricing</button>
           <span class="status inline" id="pricing-status"></span>

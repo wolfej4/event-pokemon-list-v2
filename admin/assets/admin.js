@@ -101,8 +101,8 @@
         '<td><input class="input large-in" type="number" min="0" step="0.01" placeholder="Not offered" aria-label="Large price" value="' +
           (d.large_price_cents != null ? (d.large_price_cents/100).toFixed(2) : "") + '"></td>' +
         '<td>' + (d.has_keychain
-          ? '<input class="input kc-in" type="number" min="0" step="0.01" aria-label="Keychain price" title="Blank uses the keychain price from Pricing. 0 = this design has no keychain." placeholder="' +
-              (settings.pricing && Number(settings.pricing.keychainPrice) > 0 ? money(Math.round(settings.pricing.keychainPrice * 100)) : "Off") + '" value="' +
+          ? '<input class="input kc-in" type="number" min="0" step="0.01" aria-label="Keychain price" title="Blank uses the keychain formula on the Pricing tab. 0 = this design has no keychain." placeholder="' +
+              (settings.pricing && settings.pricing.keychainsOn !== false ? money(keychainFormula(settings.pricing)) : "Off") + '" value="' +
               (d.keychain_price_cents != null ? (d.keychain_price_cents/100).toFixed(2) : "") + '">'
           : '<span class="muted" title="Only character designs come as keychains">\u2014</span>') + '</td>' +
         '<td><input class="input url-in" type="url" placeholder="https://" aria-label="Shop link" value="' + esc(d.shop_url || "") + '"></td>' +
@@ -159,9 +159,18 @@
   $("full-sync").addEventListener("click", function(){ runSync(true); });
 
   // ---------- pricing ----------
-  var PK = ["baseFee","perGram","perHour","markupPct","minPrice","roundTo","shinyUpcharge","keychainPrice"];
-  function fillPricing(){ PK.forEach(function(k){ $("p-" + k).value = settings.pricing[k]; }); }
-  function formPricing(){ var p = {}; PK.forEach(function(k){ p[k] = Number($("p-" + k).value) || 0; }); return p; }
+  var PK = ["baseFee","perGram","perHour","markupPct","minPrice","roundTo","shinyUpcharge","keychainGrams","keychainMinutes"];
+  function fillPricing(){
+    PK.forEach(function(k){ $("p-" + k).value = settings.pricing[k]; });
+    $("p-keychainsOn").checked = settings.pricing.keychainsOn !== false;
+  }
+  function formPricing(){
+    var p = {}; PK.forEach(function(k){ p[k] = Number($("p-" + k).value) || 0; });
+    p.keychainsOn = $("p-keychainsOn").checked;
+    return p;
+  }
+  // a keychain's formula price (same for every design), mirrors keychainFormulaCents in src/pricing.js
+  function keychainFormula(p){ return formula({ total_weight_grams: p.keychainGrams, print_time: p.keychainMinutes * 60 }, p); }
   function hours(t){
     if (!t) return 0; if (typeof t === "number") return t / 3600;
     var m = String(t).match(/^(\d+):(\d{1,2})(?::(\d{1,2}))?$/);
@@ -186,6 +195,8 @@
     $("pricing-preview").innerHTML = sample.length ? sample.map(function(d){
       return '<div class="preview-row"><span>' + esc(d.title) + ' <span class="muted">(' + Math.round(d.total_weight_grams) + ' g, ' + esc(d.print_time || "?") + ')</span></span><strong>' + money(formula(d, p)) + '</strong></div>';
     }).join("") : '<p class="muted">Sync designs from N3D to see a preview.</p>';
+    $("pricing-preview").innerHTML += '<div class="preview-row"><span>Keychain <span class="muted">(' + p.keychainGrams + ' g, ' + p.keychainMinutes + ' min)</span></span><strong>' +
+      (p.keychainsOn ? money(keychainFormula(p)) : "Off") + '</strong></div>';
   }
   $("pricing-form").addEventListener("input", renderPreview);
   $("pricing-form").addEventListener("submit", function(e){

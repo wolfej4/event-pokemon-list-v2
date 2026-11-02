@@ -42,10 +42,11 @@ panel for pricing, N3D sync, and pushing to Square. Light and dark mode on both.
   there's no combined "Large Shiny" listing), pushes to Square as its own
   "Large" item variation with `<SKU>-LARGE`.
 - **Keychains:** every design also comes as a keychain: its pixel sprite
-  printed flat with a hoop, regular colors only (no Shiny keychain). One price
-  for all of them on the Pricing tab ("Keychain price", default $5; 0 turns
-  keychains off), or a design's own price in its Keychain column (0 there
-  means that design has no keychain). Pushes to Square as a "Keychain" item
+  printed flat with a hoop, regular colors only (no Shiny keychain). Priced by
+  the same formula as the balls, from the keychain filament (g) and print time
+  set under Keychains on the Pricing tab (N3D doesn't list them). "Offer
+  keychains" turns them off everywhere. A design's own price in its Keychain
+  column wins, and 0 there means that design has no keychain. Pushes to Square as a "Keychain" item
   variation with `<SKU>-KEY`. On the storefront, a **Keychains** filter lists
   them with their keychain price, and the design view has a Ball / Keychain
   switch for the price, stock and details.
