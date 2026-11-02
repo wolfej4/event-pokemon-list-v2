@@ -22,7 +22,8 @@ const DEFAULT_SETTINGS = {
     markupPct: 0,         // % added on top
     minPrice: 5.00,       // floor per item
     roundTo: 1.00,        // round up to nearest $X (0 = no rounding)
-    shinyUpcharge: 5.00    // $ added on top for the Shiny variation pushed to Square
+    shinyUpcharge: 5.00,   // $ added on top for the Shiny variation pushed to Square
+    keychainPrice: 5.00    // $ for a character's sprite keychain (blank/0 = keychains off)
   },
   squareOverwritePrices: true, // re-push replaces the price in Square
   spoolmanLowStockGrams: 250,  // flag a color as low when matched stock falls below this

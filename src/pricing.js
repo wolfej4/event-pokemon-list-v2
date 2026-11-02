@@ -39,8 +39,24 @@ function shinyCents(d, pricing) {
   return unitCents(d, pricing) + Math.round((Number(pricing.shinyUpcharge) || 0) * 100);
 }
 
+// Every Pokémon character design also comes as a keychain: its pixel sprite
+// printed flat with a ring, regular colors only (no Shiny keychain). One flat
+// price from settings, unless the design has its own keychain price. null when
+// the design has no keychain (plain balls, extras) or the price is blank,
+// which turns keychains off everywhere.
+function hasKeychain(d) {
+  return !!(d && d.pokemon && d.category === "character");
+}
+function keychainCents(d, pricing) {
+  if (!hasKeychain(d)) return null;
+  if (d.keychain_price_cents !== null && d.keychain_price_cents !== undefined) return d.keychain_price_cents;
+  const p = pricing && pricing.keychainPrice;
+  if (p === null || p === undefined || p === "" || !(Number(p) > 0)) return null;
+  return Math.round(Number(p) * 100);
+}
+
 function fmt(cents, currency = "USD") {
   return (cents / 100).toLocaleString("en-US", { style: "currency", currency });
 }
 
-module.exports = { parsePrintHours, formulaCents, unitCents, shinyCents, fmt };
+module.exports = { parsePrintHours, formulaCents, unitCents, shinyCents, hasKeychain, keychainCents, fmt };

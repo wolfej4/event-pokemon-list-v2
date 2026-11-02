@@ -100,6 +100,11 @@
           (d.price_cents != null ? (d.price_cents/100).toFixed(2) : "") + '"></td>' +
         '<td><input class="input large-in" type="number" min="0" step="0.01" placeholder="Not offered" aria-label="Large price" value="' +
           (d.large_price_cents != null ? (d.large_price_cents/100).toFixed(2) : "") + '"></td>' +
+        '<td>' + (d.has_keychain
+          ? '<input class="input kc-in" type="number" min="0" step="0.01" aria-label="Keychain price" title="Blank uses the keychain price from Pricing" placeholder="' +
+              (settings.pricing && Number(settings.pricing.keychainPrice) > 0 ? money(Math.round(settings.pricing.keychainPrice * 100)) : "Off") + '" value="' +
+              (d.keychain_price_cents != null ? (d.keychain_price_cents/100).toFixed(2) : "") + '">'
+          : '<span class="muted" title="Only character designs come as keychains">\u2014</span>') + '</td>' +
         '<td><input class="input url-in" type="url" placeholder="https://" aria-label="Shop link" value="' + esc(d.shop_url || "") + '"></td>' +
         '<td><input type="checkbox" class="vis" aria-label="Visible on store"' + (d.visible !== false ? " checked" : "") + '></td>' +
         '<td>' + squareCell(d) + '</td>' +
@@ -122,6 +127,7 @@
       p = api("/designs/" + encodeURIComponent(slug), { method:"POST", body:{
         price: tr.querySelector(".price-in").value,
         large_price: tr.querySelector(".large-in").value,
+        keychain_price: tr.querySelector(".kc-in") ? tr.querySelector(".kc-in").value : undefined,
         shop_url: tr.querySelector(".url-in").value,
         visible: tr.querySelector(".vis").checked
       }}).then(function(r){ replaceDesign(r.data); tr.classList.toggle("off", r.data.visible === false); note.textContent = "Saved"; });
@@ -153,7 +159,7 @@
   $("full-sync").addEventListener("click", function(){ runSync(true); });
 
   // ---------- pricing ----------
-  var PK = ["baseFee","perGram","perHour","markupPct","minPrice","roundTo","shinyUpcharge"];
+  var PK = ["baseFee","perGram","perHour","markupPct","minPrice","roundTo","shinyUpcharge","keychainPrice"];
   function fillPricing(){ PK.forEach(function(k){ $("p-" + k).value = settings.pricing[k]; }); }
   function formPricing(){ var p = {}; PK.forEach(function(k){ p[k] = Number($("p-" + k).value) || 0; }); return p; }
   function hours(t){

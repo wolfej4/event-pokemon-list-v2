@@ -6,6 +6,7 @@
   var designs = [], bySlug = {}, settings = {}, filter = { cat:"all", q:"" }, sortBy = "az";
   var lastFocus = null;
   var shown = [], currentSlug = null; // grid order, for stepping through designs in the detail view
+  var detailFormat = "ball";            // "ball" or "keychain" in the open detail view
 
   // ---------- kiosk mode (?kiosk=1 to turn on for this device, ?kiosk=0 to turn off) ----------
   var params = new URLSearchParams(location.search);
@@ -77,11 +78,14 @@
   $("clear-filters").addEventListener("click", function(){ $("search").value = ""; filter.q = ""; render(); });
   $("sort").addEventListener("change", function(e){ sortBy = e.target.value; render(); });
 
+  // "Keychains" isn't an N3D category: it lists every design that also comes as
+  // a keychain, and the cards switch to showing the keychain.
+  function keychainView(){ return filter.cat === "keychain"; }
   function matches(d){
-    if (filter.cat !== "all" && d.category !== filter.cat) return false;
+    if (keychainView() ? !d.keychain : (filter.cat !== "all" && d.category !== filter.cat)) return false;
     if (!filter.q) return true;
     var p = d.pokemon || {};
-    var hay = [d.title, d.slug, p.name, p.pokedex_number, (p.types || []).join(" ")].join(" ").toLowerCase();
+    var hay = [d.title, d.slug, p.name, p.pokedex_number, (p.types || []).join(" "), d.keychain ? "keychain keychains" : ""].join(" ").toLowerCase();
     return filter.q.split(/\s+/).every(function(w){ return hay.indexOf(w) !== -1; });
   }
 
@@ -120,15 +124,66 @@
     return esc(d.price);
   }
 
+  // ---------- keychains ----------
+  // A keychain is the character's pixel sprite printed flat with a hoop, so we
+  // draw it from the sprite: hard pixel edges, a printed backing around it, and
+  // a hoop on the sprite's highest point (found once per sprite from its pixels).
+  var hoopAt = {}; // sprite URL -> "--hx:..;--hy:.." once measured
+  function spriteSrc(d){ return safeSrc(d.sprite || ""); }
+  // "Bulbasaur Keychain": the keychain is the Pokémon, not the ball design
+  function keychainName(d){ return (d.pokemon && d.pokemon.name ? nameOf(d.slug) : d.title) + " Keychain"; }
+  function keychainArt(d, big){
+    var src = spriteSrc(d);
+    if (!src) return '<div class="no-photo">Keychain photo coming soon</div>';
+    return '<div class="kc' + (big ? " big" : "") + '" style="' + (hoopAt[src] || "") + '">' +
+      '<span class="kc-hoop" aria-hidden="true"></span>' +
+      '<img alt="' + (big ? esc(keychainName(d)) : "") + '" src="' + esc(src) + '" data-hoop' + (big ? "" : ' loading="lazy"') + '></div>';
+  }
+  // Puts the hoop on the topmost pixel of the sprite. Only works for our own
+  // cached sprites (same origin); others keep the default top-center spot.
+  function placeHoop(img){
+    var src = img.getAttribute("src");
+    if (hoopAt[src]) { img.parentNode.setAttribute("style", hoopAt[src]); return; }
+    try {
+      var w = img.naturalWidth, h = img.naturalHeight; if (!w || !h) return;
+      var c = document.createElement("canvas"); c.width = w; c.height = h;
+      var g = c.getContext("2d"); g.drawImage(img, 0, 0);
+      var px = g.getImageData(0, 0, w, h).data;
+      for (var y = 0; y < h; y++){
+        var first = -1, last = -1;
+        for (var x = 0; x < w; x++) if (px[(y * w + x) * 4 + 3] > 60){ if (first < 0) first = x; last = x; }
+        if (first > -1){
+          hoopAt[src] = "--hx:" + ((first + last) / 2 / w * 100).toFixed(1) + "%;--hy:" + (y / h * 100).toFixed(1) + "%";
+          img.parentNode.setAttribute("style", hoopAt[src]);
+          return;
+        }
+      }
+    } catch(e){ /* cross-origin sprite: leave the hoop where it is */ }
+  }
+  document.addEventListener("load", function(e){
+    if (e.target && e.target.hasAttribute && e.target.hasAttribute("data-hoop")) placeHoop(e.target);
+  }, true);
+  function placeLoadedHoops(root){
+    [].forEach.call(root.querySelectorAll("img[data-hoop]"), function(img){ if (img.complete && img.naturalWidth) placeHoop(img); });
+  }
+
   // ---------- stock (from Stockroom; d.stock is null for designs it doesn't track) ----------
-  function stockBadge(d){
+  function stockBadge(d, keychain){
     var st = d.stock; if (!st) return "";
+    if (keychain) {
+      if (!("keychain" in st)) return "";
+      return st.keychain > 0 ? '<span class="stock in">In stock</span>' : '<span class="stock">Made to order</span>';
+    }
     if (st.regular > 0) return '<span class="stock in">In stock</span>';
     if (st.shiny > 0) return '<span class="stock in">Shiny in stock</span>';
     return '<span class="stock">Made to order</span>';
   }
-  function stockLine(d){
+  function stockLine(d, keychain){
     var st = d.stock; if (!st) return "";
+    if (keychain) {
+      if (!("keychain" in st)) return "";
+      return '<p class="avail">' + (st.keychain > 0 ? '<b class="in">' + st.keychain + ' in stock</b>' : "Made to order") + '</p>';
+    }
     var parts = [];
     if ("regular" in st) parts.push(st.regular > 0 ? '<b class="in">' + st.regular + ' in stock</b>' : "Made to order");
     if ("shiny" in st) parts.push("Shiny: " + (st.shiny > 0 ? '<b class="in">' + st.shiny + ' in stock</b>' : "made to order"));
@@ -137,22 +192,32 @@
 
   function render(){
     var list = designs.filter(matches).sort(SORTS[sortBy] || byName);
+    var kc = keychainView();
     shown = list.map(function(d){ return d.slug; });
-    $("result-count").textContent = list.length + (list.length === 1 ? " design" : " designs");
+    $("result-count").textContent = list.length + (kc ? (list.length === 1 ? " keychain" : " keychains") : (list.length === 1 ? " design" : " designs"));
     $("empty").hidden = list.length > 0 || designs.length === 0;
     if (!designs.length) $("result-count").textContent = "No designs are listed yet.";
     $("grid").innerHTML = list.map(function(d){
       var p = d.pokemon;
       var meta = p ? ((p.pokedex_number ? "#" + p.pokedex_number + " " : "") + (p.types || []).join(" / ")) : (d.category || "");
+      if (kc) return '<article class="card" data-slug="' + esc(d.slug) + '" tabindex="0" role="button" aria-label="' + esc(keychainName(d)) + '">' +
+        '<div class="thumb kc-thumb">' + keychainArt(d) + '</div>' +
+        '<div class="card-body"><div class="card-title">' + esc(keychainName(d)) + '</div>' +
+        '<div class="card-meta">' + esc(meta) + '</div>' +
+        '<div class="card-foot"><span class="price">' + esc(d.keychain.price) + '</span>' + stockBadge(d, true) + '</div>' +
+        evoStrip(d) +
+        '</div></article>';
       return '<article class="card" data-slug="' + esc(d.slug) + '" tabindex="0" role="button" aria-label="' + esc(d.title) + '">' +
         '<div class="thumb">' + (d.image_url ? '<img loading="lazy" alt="" src="' + esc(safeSrc(d.image_url)) + '">' : '<div class="no-photo">Photo coming soon</div>') +
         (d.is_extra ? '<span class="tag">Limited</span>' : '') + '</div>' + spool(d) +
         '<div class="card-body"><div class="card-title">' + esc(d.title) + '</div>' +
         '<div class="card-meta">' + esc(meta) + '</div>' +
-        '<div class="card-foot"><span class="price">' + priceHtml(d) + '</span>' + stockBadge(d) + '</div>' +
+        '<div class="card-foot"><span class="price">' + priceHtml(d) +
+          (d.keychain ? '<small class="kc-price">Keychain ' + esc(d.keychain.price) + '</small>' : '') + '</span>' + stockBadge(d) + '</div>' +
         evoStrip(d) +
         '</div></article>';
     }).join("");
+    if (kc) placeLoadedHoops($("grid"));
   }
 
   // ---------- evolution family ----------
@@ -224,28 +289,45 @@
   function closeOverlay(el){ el.hidden = true; document.body.style.overflow = ""; if (lastFocus) lastFocus.focus(); }
 
   // dir: +1 / -1 when stepping from the neighboring design (slides the new one in)
-  function openDetail(slug, dir){
+  function formatToggle(d, kc){
+    if (!d.keychain) return "";
+    return '<div class="formats" role="group" aria-label="Choose a version">' +
+      '<button type="button" data-format="ball" aria-pressed="' + !kc + '"><span>Ball</span><b>' + esc(d.price) + '</b></button>' +
+      '<button type="button" data-format="keychain" aria-pressed="' + kc + '"><span>Keychain</span><b>' + esc(d.keychain.price) + '</b></button></div>';
+  }
+  // format: "ball" / "keychain" to switch versions in place; otherwise the
+  // Keychains filter opens keychains and everything else opens the ball
+  function openDetail(slug, dir, format){
     var d = bySlug[slug]; if (!d) return;
     var p = d.pokemon;
     var i = shown.indexOf(slug), n = shown.length;
+    var reopen = format && slug === currentSlug && !$("detail").hidden;
     currentSlug = slug;
-    var h = '<div class="media">' + (d.image_url ? '<img alt="' + esc(d.title) + '" src="' + esc(safeSrc(d.image_url)) + '">' : '<div class="no-photo">Photo coming soon</div>') + spool(d) + '</div>';
+    detailFormat = d.keychain && (format ? format === "keychain" : (dir ? detailFormat === "keychain" : keychainView())) ? "keychain" : "ball";
+    var kc = detailFormat === "keychain";
+    var h = '<div class="media">' + (kc ? keychainArt(d, true)
+      : (d.image_url ? '<img alt="' + esc(d.title) + '" src="' + esc(safeSrc(d.image_url)) + '">' : '<div class="no-photo">Photo coming soon</div>') + spool(d)) + '</div>';
     h += '<div class="info"><div class="detail-top">' +
       (i > -1 && n > 1 ? '<div class="detail-nav">' +
         '<button type="button" class="btn ghost small" data-nav="-1" aria-label="Previous design"' + (i === 0 ? " disabled" : "") + '>\u2039</button>' +
         '<span class="pos">' + (i + 1) + ' of ' + n + '</span>' +
         '<button type="button" class="btn ghost small" data-nav="1" aria-label="Next design"' + (i === n - 1 ? " disabled" : "") + '>\u203a</button></div>' : '<span></span>') +
       '<button type="button" class="btn ghost small" data-close>Close</button></div>' +
-      '<h2 id="detail-title">' + esc(d.title) + '</h2>';
+      '<h2 id="detail-title">' + esc(kc ? keychainName(d) : d.title) + '</h2>';
     if (p && p.types && p.types.length) h += '<div class="types">' + p.types.map(function(t){
       return '<span style="--t-color:' + typeColor(t) + '">' + esc(t) + '</span>';
     }).join("") + '</div>';
     if (p && p.description) h += '<p class="flavor">' + esc(p.description) + '</p>';
-    h += '<dl class="specs"><div><dt>Price</dt><dd>' + priceHtml(d) + '</dd></div>' +
+    h += formatToggle(d, kc);
+    if (kc) h += '<p class="kc-about">The pixel sprite printed flat in full color, with a hoop for your keys or bag.</p>' +
+      '<dl class="specs"><div><dt>Price</dt><dd>' + esc(d.keychain.price) + '</dd></div>' +
+      '<div><dt>Size</dt><dd>4\u20135 cm</dd></div>' +
+      '<div><dt>Thickness</dt><dd>4 mm</dd></div></dl>';
+    else h += '<dl class="specs"><div><dt>Price</dt><dd>' + priceHtml(d) + '</dd></div>' +
       '<div><dt>Print time</dt><dd>' + esc(d.print_time || "\u2014") + '</dd></div>' +
       '<div><dt>Weight</dt><dd>' + (d.total_weight_grams ? Math.round(d.total_weight_grams) + " g" : "\u2014") + '</dd></div></dl>';
-    h += stockLine(d);
-    if (d.filaments && d.filaments.length){
+    h += stockLine(d, kc);
+    if (!kc && d.filaments && d.filaments.length){
       h += '<ul class="filaments">' + d.filaments.map(function(f){
         return '<li><span class="swatch" style="background:' + safeColor(f.hex_color) + '"></span>' + esc(f.color) +
           (f.series ? ' <span style="color:var(--faint)">' + esc(f.series) + '</span>' : '') +
@@ -257,6 +339,11 @@
     h += '</div>';
     var body = $("detail-body");
     body.innerHTML = h;
+    if (kc) placeLoadedHoops(body);
+    if (reopen) { // switched Ball/Keychain: keep the place and focus
+      var t = body.querySelector('[data-format="' + detailFormat + '"]'); if (t) t.focus();
+      return;
+    }
     body.scrollTop = 0;
     if (dir) {
       body.classList.remove("from-left", "from-right");
@@ -277,6 +364,8 @@
   }
   $("detail").addEventListener("click", function(e){
     if (e.target === this || e.target.closest("[data-close]")) return closeOverlay(this);
+    var fmt = e.target.closest("[data-format]");
+    if (fmt) return openDetail(currentSlug, 0, fmt.dataset.format);
     var go = e.target.closest("[data-goto]");
     if (go) return openDetail(go.dataset.goto, 1);
     var nav = e.target.closest("[data-nav]");
@@ -313,7 +402,7 @@
         if (changed) {
           render();
           var open = !$("detail").hidden && $("detail-body").querySelector(".avail");
-          if (open && bySlug[currentSlug]) open.outerHTML = stockLine(bySlug[currentSlug]) || '<p class="avail" hidden></p>';
+          if (open && bySlug[currentSlug]) open.outerHTML = stockLine(bySlug[currentSlug], detailFormat === "keychain") || '<p class="avail" hidden></p>';
         }
       }).catch(function(){});
     }, 60 * 1000);

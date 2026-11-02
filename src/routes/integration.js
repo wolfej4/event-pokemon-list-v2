@@ -16,7 +16,7 @@ const db = require("../db");
 const square = require("../squareClient");
 const stockroom = require("../stockroomClient");
 const { squareIdsFor } = require("../squareIds");
-const { unitCents, shinyCents } = require("../pricing");
+const { unitCents, shinyCents, keychainCents } = require("../pricing");
 
 const router = express.Router();
 
@@ -43,7 +43,11 @@ router.get("/designs", (req, res) => {
       pokedex_number: (d.pokemon && d.pokemon.pokedex_number) || null,
       price_cents: unitCents(d, s.pricing),
       shiny_price_cents: shinyCents(d, s.pricing),
-      has_shiny: !!d.pokemon
+      has_shiny: !!d.pokemon,
+      keychain_price_cents: keychainCents(d, s.pricing),
+      has_keychain: keychainCents(d, s.pricing) != null,
+      // the versions an item in Stockroom can be linked to
+      variants: ["regular"].concat(d.pokemon ? ["shiny"] : [], keychainCents(d, s.pricing) != null ? ["keychain"] : [])
     }));
   res.json({ designs, currency: s.currency });
 });
@@ -77,6 +81,7 @@ function variationMap() {
     const ids = squareIdsFor(d, env);
     if (ids.square_variation_id) map[ids.square_variation_id] = { slug: d.slug, variant: "regular", title: d.title };
     if (ids.square_variation_id_shiny) map[ids.square_variation_id_shiny] = { slug: d.slug, variant: "shiny", title: d.title };
+    if (ids.square_variation_id_keychain) map[ids.square_variation_id_keychain] = { slug: d.slug, variant: "keychain", title: d.title };
   }
   return map;
 }
@@ -119,6 +124,10 @@ router.post("/webhooks/square", express.raw({ type: () => true, limit: "1mb" }),
         lines.push({ name: li.name, slug: hit.slug, variant: hit.variant, qty, result: out.duplicate ? "already counted" : "now " + out.qty + " on hand" });
       } catch (e) {
         if (e.code === "not_linked") { lines.push({ name: li.name, slug: hit.slug, variant: hit.variant, qty, result: "not linked in Stockroom" }); continue; }
+        // Stockroom answered but turned this line down (e.g. a version it doesn't
+        // know, like keychain before Stockroom was updated). Retrying won't change
+        // that, so note it and carry on with the rest of the order.
+        if (e.status >= 400 && e.status < 500) { lines.push({ name: li.name, slug: hit.slug, variant: hit.variant, qty, result: "Stockroom said: " + e.message }); continue; }
         throw e; // Stockroom down or erroring: let Square retry the whole delivery
       }
     }

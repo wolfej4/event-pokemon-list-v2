@@ -41,6 +41,14 @@ panel for pricing, N3D sync, and pushing to Square. Light and dark mode on both.
   independently of Shiny (a design can offer Shiny, Large, both, or neither —
   there's no combined "Large Shiny" listing), pushes to Square as its own
   "Large" item variation with `<SKU>-LARGE`.
+- **Keychains:** every character design also comes as a keychain: its pixel
+  sprite printed flat with a hoop, regular colors only (no Shiny keychain).
+  One price for all of them on the Pricing tab ("Keychain price", default $5;
+  0 turns keychains off), or a design's own price in its Keychain column.
+  Plain balls and extras don't get one. Pushes to Square as a "Keychain" item
+  variation with `<SKU>-KEY`. The storefront draws each keychain from the
+  cached sprite, so there's nothing to photograph: a **Keychains** filter shows
+  them all, and the design view has a Ball / Keychain switch.
 - **Pricing:** formula for any design without a custom price:
   `(base fee + grams × per-gram + hours × per-hour) × (1 + markup%)`, with a
   minimum and optional round-up. Live preview as you type.
@@ -92,7 +100,7 @@ panel for pricing, N3D sync, and pushing to Square. Light and dark mode on both.
 - **Stockroom:** if `STOCKROOM_URL` and `INTEGRATION_KEY` are set, designs linked to
   an item in [Voxelwaves Stockroom](https://github.com/wolfej4/voxelwaves-stockroom)
   show **In stock** (or **Made to order** at 0) on their card, and the design view
-  shows the count for the Regular and Shiny versions. See *Stockroom link* below.
+  shows the count for the Regular, Shiny and Keychain versions. See *Stockroom link* below.
 
 **Kiosk mode** for a booth tablet: open `/?kiosk=1` once on that device. Hides
 outside shop links, uses bigger buttons, and clears everything after the idle
@@ -136,7 +144,8 @@ secret.
    (e.g. `http://192.168.1.20:8085`), not through Pangolin/Pocket ID. In
    Stockroom, set `CATALOG_URL` to how it reaches this app.
 3. In Stockroom, open each finished print under **Items** and pick its catalog
-   design and version (Regular or Shiny).
+   design and version (Regular, Shiny or Keychain; Keychain needs a Stockroom
+   version that knows it).
 4. **Square sales** (optional): in the Square Developer Console → your app →
    Webhooks, add a subscription for `payment.created` and `payment.updated`
    pointing at `https://<your public catalog address>/api/v1/webhooks/square`.
@@ -150,10 +159,14 @@ that many off the linked Stockroom item. Square resends events and an order can
 have several payments; each line still only comes off once. If Stockroom can't
 be reached, the webhook answers 500 so Square tries again later. **Inventory →
 Square sales → Stockroom** in admin lists the last 25 deliveries and what
-happened to each line. Refunds aren't added back automatically.
+happened to each line. Refunds aren't added back automatically. A line Stockroom
+turns down (for example a keychain sold before Stockroom knows keychains) is
+logged there and skipped; the rest of the order still comes off.
 
 Stockroom reads `GET /api/v1/designs` (header `X-API-Key: <INTEGRATION_KEY>`) for
-the link picker and copies prices onto linked items hourly.
+the link picker and copies prices onto linked items hourly. Each design lists
+the versions an item can link to in `variants` (`regular`, plus `shiny` and
+`keychain` where offered), with `keychain_price_cents` alongside the others.
 
 ## Notes
 
