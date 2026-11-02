@@ -101,3 +101,4 @@ label.btn{ cursor:pointer; }
 .err-note{ color:var(--bad); max-width:230px; margin-top:3px; }
 .sr-sales{ list-style:none; margin:8px 0 12px; padding:0; max-height:260px; overflow:auto; font-size:.86rem; }
 .sr-sales li{ padding:6px 0; border-top:1px solid var(--line); }
+.kc-head{ margin:22px 0 2px; font-size:1rem; }

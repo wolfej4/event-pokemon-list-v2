@@ -183,7 +183,8 @@ router.post("/settings", (req, res) => {
   }
   if (b.pricing) {
     u.pricing = {};
-    for (const k of ["baseFee", "perGram", "perHour", "markupPct", "minPrice", "roundTo", "shinyUpcharge", "keychainPrice"]) {
+    if (b.pricing.keychainsOn !== undefined) u.pricing.keychainsOn = !!b.pricing.keychainsOn;
+    for (const k of ["baseFee", "perGram", "perHour", "markupPct", "minPrice", "roundTo", "shinyUpcharge", "keychainGrams", "keychainMinutes"]) {
       if (b.pricing[k] === undefined) continue;
       const n = Number(b.pricing[k]);
       if (!Number.isFinite(n) || n < 0) return res.status(400).json({ error: `Pricing value "${k}" must be 0 or more.` });

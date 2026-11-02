@@ -23,7 +23,9 @@ const DEFAULT_SETTINGS = {
     minPrice: 5.00,       // floor per item
     roundTo: 1.00,        // round up to nearest $X (0 = no rounding)
     shinyUpcharge: 5.00,   // $ added on top for the Shiny variation pushed to Square
-    keychainPrice: 5.00    // $ for a character's sprite keychain (blank/0 = keychains off)
+    keychainsOn: true,     // every design also comes as a keychain
+    keychainGrams: 5,      // a keychain's filament, for the formula (N3D doesn't list it)
+    keychainMinutes: 0     // a keychain's print time in minutes, for the formula
   },
   squareOverwritePrices: true, // re-push replaces the price in Square
   spoolmanLowStockGrams: 250,  // flag a color as low when matched stock falls below this
@@ -51,7 +53,12 @@ function load() {
   try {
     const p = JSON.parse(fs.readFileSync(DB_PATH, "utf8"));
     const settings = Object.assign(structuredClone(DEFAULT_SETTINGS), p.settings || {});
-    settings.pricing = Object.assign({}, DEFAULT_SETTINGS.pricing, (p.settings || {}).pricing || {});
+    const savedPricing = (p.settings || {}).pricing || {};
+    settings.pricing = Object.assign({}, DEFAULT_SETTINGS.pricing, savedPricing);
+    // keychains used to be one flat price where 0 meant off; keep them off for
+    // anyone who had turned them off that way
+    if (savedPricing.keychainsOn === undefined && savedPricing.keychainPrice === 0) settings.pricing.keychainsOn = false;
+    delete settings.pricing.keychainPrice;
     // swap the old quote-era wording for the new defaults, unless it was customized
     for (const [k, old] of Object.entries(OLD_DEFAULTS)) if (settings[k] === old) settings[k] = DEFAULT_SETTINGS[k];
     return { designs: p.designs || {}, quotes: p.quotes || [], settings };

@@ -40,23 +40,32 @@ function shinyCents(d, pricing) {
 }
 
 // Every design also comes as a keychain: its pixel sprite printed flat with a
-// hoop, regular colors only (no Shiny keychain). One flat price from settings,
-// unless the design has its own keychain price. A design's own price of 0
-// means that design has no keychain; a blank or 0 price in settings turns
-// keychains off everywhere. null = no keychain.
+// hoop, regular colors only (no Shiny keychain). Priced by the same formula as
+// the balls, from the keychain's filament weight and print time in settings
+// (N3D doesn't list those for keychains), unless the design has its own
+// keychain price. A design's own price of 0 means that design has no keychain;
+// "Offer keychains" off in settings turns them off everywhere. null = no keychain.
 function hasKeychain(d) {
   return !!d;
 }
+function keychainsOn(pricing) {
+  return !!pricing && pricing.keychainsOn !== false;
+}
+// The formula's price for one keychain (same for every design).
+function keychainFormulaCents(pricing) {
+  return formulaCents({
+    total_weight_grams: Number(pricing.keychainGrams) || 0,
+    print_time: (Number(pricing.keychainMinutes) || 0) * 60 // seconds
+  }, pricing);
+}
 function keychainCents(d, pricing) {
-  if (!hasKeychain(d)) return null;
+  if (!hasKeychain(d) || !keychainsOn(pricing)) return null;
   if (d.keychain_price_cents !== null && d.keychain_price_cents !== undefined) return d.keychain_price_cents > 0 ? d.keychain_price_cents : null;
-  const p = pricing && pricing.keychainPrice;
-  if (p === null || p === undefined || p === "" || !(Number(p) > 0)) return null;
-  return Math.round(Number(p) * 100);
+  return keychainFormulaCents(pricing);
 }
 
 function fmt(cents, currency = "USD") {
   return (cents / 100).toLocaleString("en-US", { style: "currency", currency });
 }
 
-module.exports = { parsePrintHours, formulaCents, unitCents, shinyCents, hasKeychain, keychainCents, fmt };
+module.exports = { parsePrintHours, formulaCents, unitCents, shinyCents, hasKeychain, keychainsOn, keychainFormulaCents, keychainCents, fmt };
