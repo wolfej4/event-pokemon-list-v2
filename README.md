@@ -46,9 +46,9 @@ panel for pricing, N3D sync, and pushing to Square. Light and dark mode on both.
   One price for all of them on the Pricing tab ("Keychain price", default $5;
   0 turns keychains off), or a design's own price in its Keychain column.
   Plain balls and extras don't get one. Pushes to Square as a "Keychain" item
-  variation with `<SKU>-KEY`. The storefront draws each keychain from the
-  cached sprite, so there's nothing to photograph: a **Keychains** filter shows
-  them all, and the design view has a Ball / Keychain switch.
+  variation with `<SKU>-KEY`. On the storefront, a **Keychains** filter lists
+  them with their keychain price, and the design view has a Ball / Keychain
+  switch for the price, stock and details.
 - **Pricing:** formula for any design without a custom price:
   `(base fee + grams × per-gram + hours × per-hour) × (1 + markup%)`, with a
   minimum and optional round-up. Live preview as you type.

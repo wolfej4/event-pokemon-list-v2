@@ -125,46 +125,10 @@
   }
 
   // ---------- keychains ----------
-  // A keychain is the character's pixel sprite printed flat with a hoop, so we
-  // draw it from the sprite: hard pixel edges, a printed backing around it, and
-  // a hoop on the sprite's highest point (found once per sprite from its pixels).
-  var hoopAt = {}; // sprite URL -> "--hx:..;--hy:.." once measured
-  function spriteSrc(d){ return safeSrc(d.sprite || ""); }
   // "Bulbasaur Keychain": the keychain is the Pokémon, not the ball design
   function keychainName(d){ return (d.pokemon && d.pokemon.name ? nameOf(d.slug) : d.title) + " Keychain"; }
-  function keychainArt(d, big){
-    var src = spriteSrc(d);
-    if (!src) return '<div class="no-photo">Keychain photo coming soon</div>';
-    return '<div class="kc' + (big ? " big" : "") + '" style="' + (hoopAt[src] || "") + '">' +
-      '<span class="kc-hoop" aria-hidden="true"></span>' +
-      '<img alt="' + (big ? esc(keychainName(d)) : "") + '" src="' + esc(src) + '" data-hoop' + (big ? "" : ' loading="lazy"') + '></div>';
-  }
-  // Puts the hoop on the topmost pixel of the sprite. Only works for our own
-  // cached sprites (same origin); others keep the default top-center spot.
-  function placeHoop(img){
-    var src = img.getAttribute("src");
-    if (hoopAt[src]) { img.parentNode.setAttribute("style", hoopAt[src]); return; }
-    try {
-      var w = img.naturalWidth, h = img.naturalHeight; if (!w || !h) return;
-      var c = document.createElement("canvas"); c.width = w; c.height = h;
-      var g = c.getContext("2d"); g.drawImage(img, 0, 0);
-      var px = g.getImageData(0, 0, w, h).data;
-      for (var y = 0; y < h; y++){
-        var first = -1, last = -1;
-        for (var x = 0; x < w; x++) if (px[(y * w + x) * 4 + 3] > 60){ if (first < 0) first = x; last = x; }
-        if (first > -1){
-          hoopAt[src] = "--hx:" + ((first + last) / 2 / w * 100).toFixed(1) + "%;--hy:" + (y / h * 100).toFixed(1) + "%";
-          img.parentNode.setAttribute("style", hoopAt[src]);
-          return;
-        }
-      }
-    } catch(e){ /* cross-origin sprite: leave the hoop where it is */ }
-  }
-  document.addEventListener("load", function(e){
-    if (e.target && e.target.hasAttribute && e.target.hasAttribute("data-hoop")) placeHoop(e.target);
-  }, true);
-  function placeLoadedHoops(root){
-    [].forEach.call(root.querySelectorAll("img[data-hoop]"), function(img){ if (img.complete && img.naturalWidth) placeHoop(img); });
+  function photoHtml(d, alt){
+    return d.image_url ? '<img' + (alt ? "" : ' loading="lazy"') + ' alt="' + esc(alt || "") + '" src="' + esc(safeSrc(d.image_url)) + '">' : '<div class="no-photo">Photo coming soon</div>';
   }
 
   // ---------- stock (from Stockroom; d.stock is null for designs it doesn't track) ----------
@@ -201,7 +165,7 @@
       var p = d.pokemon;
       var meta = p ? ((p.pokedex_number ? "#" + p.pokedex_number + " " : "") + (p.types || []).join(" / ")) : (d.category || "");
       if (kc) return '<article class="card" data-slug="' + esc(d.slug) + '" tabindex="0" role="button" aria-label="' + esc(keychainName(d)) + '">' +
-        '<div class="thumb kc-thumb">' + keychainArt(d) + '</div>' +
+        '<div class="thumb">' + photoHtml(d) + '</div>' +
         '<div class="card-body"><div class="card-title">' + esc(keychainName(d)) + '</div>' +
         '<div class="card-meta">' + esc(meta) + '</div>' +
         '<div class="card-foot"><span class="price">' + esc(d.keychain.price) + '</span>' + stockBadge(d, true) + '</div>' +
@@ -217,7 +181,6 @@
         evoStrip(d) +
         '</div></article>';
     }).join("");
-    if (kc) placeLoadedHoops($("grid"));
   }
 
   // ---------- evolution family ----------
@@ -305,8 +268,8 @@
     currentSlug = slug;
     detailFormat = d.keychain && (format ? format === "keychain" : (dir ? detailFormat === "keychain" : keychainView())) ? "keychain" : "ball";
     var kc = detailFormat === "keychain";
-    var h = '<div class="media">' + (kc ? keychainArt(d, true)
-      : (d.image_url ? '<img alt="' + esc(d.title) + '" src="' + esc(safeSrc(d.image_url)) + '">' : '<div class="no-photo">Photo coming soon</div>') + spool(d)) + '</div>';
+    // same photo for both versions; the filament strip is the ball's, so only there
+    var h = '<div class="media">' + photoHtml(d, d.title) + (kc ? "" : spool(d)) + '</div>';
     h += '<div class="info"><div class="detail-top">' +
       (i > -1 && n > 1 ? '<div class="detail-nav">' +
         '<button type="button" class="btn ghost small" data-nav="-1" aria-label="Previous design"' + (i === 0 ? " disabled" : "") + '>\u2039</button>' +
@@ -339,7 +302,6 @@
     h += '</div>';
     var body = $("detail-body");
     body.innerHTML = h;
-    if (kc) placeLoadedHoops(body);
     if (reopen) { // switched Ball/Keychain: keep the place and focus
       var t = body.querySelector('[data-format="' + detailFormat + '"]'); if (t) t.focus();
       return;
